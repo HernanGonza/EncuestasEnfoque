@@ -11,6 +11,7 @@ import {
   buscarPregunta, opcionesDe, esCompletada, valorFusionadoConSeguimiento,
   buscarSeguimientoOtro,
 } from '../lib/reportesAutomaticos'
+import { generarPDF } from '../lib/generarPDF'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend)
 
@@ -20,9 +21,11 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Le
 // pedía el prompt original y que no están en este stack:
 //   - Gráficos con react-chartjs-2/Chart.js (como el resto del panel), no
 //     Recharts — Recharts no es una dependencia del proyecto.
-//   - PDF con el mismo mecanismo que Reportes.jsx/ReportesAutomaticos.jsx
-//     (`window.print()` sobre HTML armado del lado del cliente + captura de
-//     mapa con html2canvas), no un pipeline con Puppeteer headless.
+//   - Mapa capturado a imagen con html2canvas (data: URL, autocontenida)
+//     antes de armar el HTML — el PDF sale por /api/pdf (Puppeteer +
+//     @sparticuz/chromium, ver src/lib/generarPDF.js), con el mismo
+//     fallback a window.print() que el resto de los reportes si el
+//     endpoint falla.
 // Fuentes de datos: get_respuestas_crudas (respuestas resueltas + zona_id
 // por sesión, ya usada por los reportes automáticos) y get_zonas_con_sesiones
 // (polígonos de zona, ya usada por Reportes.jsx para el mapa de calor).
@@ -524,9 +527,7 @@ export default function ReporteVisualZona({ encuesta, preguntas }) {
       }
       if (preguntaId !== preguntaOriginal) setPreguntaId(preguntaOriginal)
       const html = generarHTMLVisual(secciones, encuesta, modo === 'todas')
-      const win = window.open('', '_blank')
-      win.document.write(html); win.document.close(); win.focus()
-      setTimeout(() => win.print(), 600)
+      await generarPDF(html, `reporte-visual-${(encuesta?.nombre || 'encuesta').replace(/[^\w-]+/g, '_')}.pdf`)
     } catch (e) {
       console.error('exportarPDF visual:', e)
     }

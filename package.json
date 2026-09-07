@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.19.2",
+    "@sparticuz/chromium": "^149.0.0",
     "@supabase/supabase-js": "^2.99.2",
     "@turf/turf": "^7.3.4",
     "chart.js": "^4.5.1",
@@ -19,6 +20,8 @@
     "leaflet": "^1.9.4",
     "lucide-react": "^1.8.0",
     "npm": "^11.12.1",
+    "pdf-lib": "^1.17.1",
+    "puppeteer-core": "^25.10.0",
     "react": "^19.2.4",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.4",

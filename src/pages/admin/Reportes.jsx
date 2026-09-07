@@ -4,8 +4,10 @@ import { useAuth } from '../../hooks/useAuth'
 import { Topbar } from '../../components/layout'
 import { Spinner } from '../../components/ui'
 import Chart from 'chart.js/auto'
+import { generarPDF } from '../../lib/generarPDF'
+import CompararEncuestas from '../../components/CompararEncuestas'
 import styles from './Page.module.css'
-import { BarChart2, PieChart, FileText, Download, Filter, RefreshCw, ChevronDown, ChevronUp, Zap, Plus, Trash2, MapPin } from 'lucide-react'
+import { BarChart2, PieChart, FileText, Download, Filter, RefreshCw, ChevronDown, ChevronUp, Zap, Plus, Trash2, MapPin, Scale } from 'lucide-react'
 
 const PALETA = ['#1a472a','#0369a1','#7c3aed','#b45309','#be185d','#047857','#2d6a4f','#0284c7','#dc2626','#d97706']
 
@@ -1325,6 +1327,7 @@ export default function Reportes() {
   const [filtroZonas,       setFiltroZonas]       = useState(null) // null = todas, [] = ninguna, [ids] = filtro
 
   const [vistaCompletadas, setVistaCompletadas] = useState(false)
+  const [comparando, setComparando] = useState(false)
 
   useEffect(() => {
     if (!perfil?.organizacion_id) return
@@ -1446,7 +1449,7 @@ export default function Reportes() {
     setLoadingEnc(false)
   }
 
-  async function generarPDF(cfg) {
+  async function handleGenerarPDF(cfg) {
     if (!data || !selected) return
     setGenerando(true)
     try {
@@ -1497,11 +1500,11 @@ export default function Reportes() {
         { ...cfg, subtitulo: subtituloConZonas },
         clasificaciones,
       )
-      const win = window.open('', '_blank')
-      win.document.write(html); win.document.close(); win.focus()
-      setTimeout(() => { win.print(); setGenerando(false); setModalExport(false) }, 600)
+      const nombreArchivo = `reporte-${(selected?.nombre || 'encuesta').replace(/[^\w-]+/g, '_')}.pdf`
+      await generarPDF(html, nombreArchivo)
+      setGenerando(false); setModalExport(false)
     } catch (e) {
-      console.error('generarPDF:', e)
+      console.error('handleGenerarPDF:', e)
       setGenerando(false)
     }
   }
@@ -1575,21 +1578,27 @@ export default function Reportes() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
             {/* Lista de encuestas — cards con dos acciones */}
-            {!selected && (
+            {!selected && !comparando && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>
                   Seleccioná una encuesta para ver sus reportes
                 </div>
 
-                {/* Pestañas activas/completadas */}
-                <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
-                  <button onClick={() => setVistaCompletadas(false)}
-                    style={{ padding: '5px 14px', borderRadius: 100, fontSize: 12, fontWeight: 700, fontFamily: 'DM Sans', cursor: 'pointer', border: `1.5px solid ${!vistaCompletadas ? 'var(--accent)' : 'var(--border2)'}`, background: !vistaCompletadas ? 'var(--accent-light)' : 'var(--surface)', color: !vistaCompletadas ? 'var(--accent)' : 'var(--ink3)' }}>
-                    Activas <span style={{ fontWeight: 400 }}>({encuestas.filter(e => e.estado_produccion === 'publicada').length})</span>
-                  </button>
-                  <button onClick={() => setVistaCompletadas(true)}
-                    style={{ padding: '5px 14px', borderRadius: 100, fontSize: 12, fontWeight: 700, fontFamily: 'DM Sans', cursor: 'pointer', border: `1.5px solid ${vistaCompletadas ? 'var(--accent)' : 'var(--border2)'}`, background: vistaCompletadas ? 'var(--accent-light)' : 'var(--surface)', color: vistaCompletadas ? 'var(--accent)' : 'var(--ink3)' }}>
-                    ✓ Completadas <span style={{ fontWeight: 400 }}>({encuestas.filter(e => e.estado_produccion === 'completada').length})</span>
+                {/* Pestañas activas/completadas + comparar */}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 4, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => setVistaCompletadas(false)}
+                      style={{ padding: '5px 14px', borderRadius: 100, fontSize: 12, fontWeight: 700, fontFamily: 'DM Sans', cursor: 'pointer', border: `1.5px solid ${!vistaCompletadas ? 'var(--accent)' : 'var(--border2)'}`, background: !vistaCompletadas ? 'var(--accent-light)' : 'var(--surface)', color: !vistaCompletadas ? 'var(--accent)' : 'var(--ink3)' }}>
+                      Activas <span style={{ fontWeight: 400 }}>({encuestas.filter(e => e.estado_produccion === 'publicada').length})</span>
+                    </button>
+                    <button onClick={() => setVistaCompletadas(true)}
+                      style={{ padding: '5px 14px', borderRadius: 100, fontSize: 12, fontWeight: 700, fontFamily: 'DM Sans', cursor: 'pointer', border: `1.5px solid ${vistaCompletadas ? 'var(--accent)' : 'var(--border2)'}`, background: vistaCompletadas ? 'var(--accent-light)' : 'var(--surface)', color: vistaCompletadas ? 'var(--accent)' : 'var(--ink3)' }}>
+                      ✓ Completadas <span style={{ fontWeight: 400 }}>({encuestas.filter(e => e.estado_produccion === 'completada').length})</span>
+                    </button>
+                  </div>
+                  <button onClick={() => setComparando(true)}
+                    style={{ padding: '5px 14px', borderRadius: 100, fontSize: 12, fontWeight: 700, fontFamily: 'DM Sans', cursor: 'pointer', border: '1.5px solid var(--border2)', background: 'var(--surface)', color: 'var(--ink2)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Scale size={13} /> Comparar encuestas
                   </button>
                 </div>
 
@@ -1620,7 +1629,11 @@ export default function Reportes() {
               </div>
             )}
 
-            {selected && (
+            {comparando && (
+              <CompararEncuestas encuestas={encuestas} perfil={perfil} onVolver={() => setComparando(false)} />
+            )}
+
+            {selected && !comparando && (
               <>
                 {/* Header con botón Volver */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1808,7 +1821,7 @@ export default function Reportes() {
                         {/* Botón exportar mapa separado */}
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                           {mapaDatos?.img && (
-                            <button onClick={() => {
+                            <button onClick={async () => {
                               const fecha = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
                               const leyenda = (mapaDatos.leyenda||[]).filter(l => l.cant > 0)
                               const leyendaHTML = leyenda.length > 0
@@ -1839,9 +1852,7 @@ export default function Reportes() {
                               <img src="${mapaDatos.img}" style="width:100%;border-radius:8px;border:1px solid #e5e7eb" />
                               <p style="font-size:10px;color:#bbb;margin-top:16px;text-align:right">METR1KA — metr1ka.com · ${fecha}</p>
                               </body></html>`
-                              const win = window.open('', '_blank')
-                              win.document.write(html); win.document.close(); win.focus()
-                              setTimeout(() => win.print(), 600)
+                              await generarPDF(html, `mapa-${(selected?.nombre || 'encuesta').replace(/[^\w-]+/g, '_')}.pdf`)
                             }} style={{
                               padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none',
                               borderRadius: 'var(--r)', fontFamily: 'DM Sans', fontSize: 12, fontWeight: 700,
@@ -2066,7 +2077,7 @@ export default function Reportes() {
                 style={{ padding: '9px 18px', background: 'var(--surface)', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 13, cursor: 'pointer', fontFamily: 'DM Sans', color: 'var(--ink2)' }}>
                 Cancelar
               </button>
-              <button onClick={() => generarPDF(exportConfig)} disabled={generando}
+              <button onClick={() => handleGenerarPDF(exportConfig)} disabled={generando}
                 style={{ padding: '9px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--r)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'DM Sans', display: 'flex', alignItems: 'center', gap: 6 }}>
                 {generando ? '⏳ Generando...' : '⬇ Exportar PDF'}
               </button>

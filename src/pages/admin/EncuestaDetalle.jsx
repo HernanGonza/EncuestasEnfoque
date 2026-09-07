@@ -740,6 +740,7 @@ function EquiposSnapshot({ snap }) {
 
 function VistaResultados({ encuesta, preguntas, resumen, respuestas, encuestadores, equipos, filtros, onFiltroChange, loadingR, sesionesGPS, onCargarMapa, loadingGPS, statsZona, onCargarZonas, loadingZonas, configSnapshot, tiempoStats }) {
   const [vista, setVista] = useState('resumen')
+  const [subVistaAnalisis, setSubVistaAnalisis] = useState('visual') // 'visual' | 'reportes' — sub-selector de la tab fusionada "Análisis y reportes"
   const [encZonasAbiertas, setEncZonasAbiertas] = useState({})
   const [sortEnc, setSortEnc] = useState({ campo: null, dir: 'desc' })
 
@@ -873,7 +874,7 @@ function VistaResultados({ encuesta, preguntas, resumen, respuestas, encuestador
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)' }}>
-        {[['resumen','Resumen'],['preguntas','Por pregunta'],['encuestadores','Encuestadores'],['zonas','📍 Por zona'],['equipos','👥 Equipos'],['mapa','🗺️ Mapa'],['visual','🎯 Reporte visual'],['reportes','📄 Reportes']].map(([v, label]) => (
+        {[['resumen','Resumen'],['preguntas','Por pregunta'],['encuestadores','Encuestadores'],['zonas','📍 Por zona'],['equipos','👥 Equipos'],['mapa','🗺️ Mapa'],['analisis','📊 Análisis y reportes']].map(([v, label]) => (
           <button key={v} onClick={() => setVista(v)} style={{
             padding: '8px 16px', border: 'none', background: 'none', cursor: 'pointer',
             fontSize: 13, fontFamily: 'DM Sans', marginBottom: -1,
@@ -979,15 +980,26 @@ function VistaResultados({ encuesta, preguntas, resumen, respuestas, encuestador
         />
       )}
 
-      {vista === 'visual' && (
-        <ReporteVisualZona encuesta={encuesta} preguntas={preguntas} />
-      )}
-
-      {vista === 'reportes' && (
-        <ReportesAutomaticos
-          encuesta={encuesta} preguntas={preguntas}
-          statsZona={statsZona} onCargarZonas={onCargarZonas} loadingZonas={loadingZonas}
-        />
+      {vista === 'analisis' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[['visual', 'Reporte visual por zona'], ['reportes', 'Reportes descargables']].map(([v, label]) => (
+              <button key={v} onClick={() => setSubVistaAnalisis(v)}
+                style={{ padding: '5px 12px', borderRadius: 100, border: `1.5px solid ${subVistaAnalisis === v ? 'var(--accent)' : 'var(--border2)'}`, background: subVistaAnalisis === v ? 'var(--accent-light)' : 'var(--paper)', color: subVistaAnalisis === v ? 'var(--accent)' : 'var(--ink3)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {subVistaAnalisis === 'visual' && (
+            <ReporteVisualZona encuesta={encuesta} preguntas={preguntas} />
+          )}
+          {subVistaAnalisis === 'reportes' && (
+            <ReportesAutomaticos
+              encuesta={encuesta} preguntas={preguntas}
+              statsZona={statsZona} onCargarZonas={onCargarZonas} loadingZonas={loadingZonas}
+            />
+          )}
+        </div>
       )}
     </div>
   )
