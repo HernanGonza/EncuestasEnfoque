@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { Topbar } from '../../components/layout'
 import { Spinner } from '../../components/ui'
 import styles from '../admin/Page.module.css'
+import MensajeModal from '../../components/MensajeModal'
 
 function esActivo(actualizado_en) {
   if (!actualizado_en) return false
@@ -45,6 +46,9 @@ export default function EquipoCoord() {
   const [encuestadores, setEncuestadores] = useState([])
   const [loading,    setLoading]    = useState(true)
   const [expandido,  setExpandido]  = useState(null)
+  const [tiempos,    setTiempos]    = useState({}) // { [encuestador_id]: { promedio_segundos, total_completadas } }
+  const [showMensajeEquipo, setShowMensajeEquipo] = useState(false)
+  const [mensajeando, setMensajeando] = useState(null) // encuestador puntual
 
   // Cargar todos los equipos del coordinador
   useEffect(() => {
@@ -104,6 +108,22 @@ export default function EquipoCoord() {
         ;(ubs || []).forEach(u => { ubicaciones[u.encuestador_id] = u })
       }
 
+      // Tiempo promedio por encuestador — get_stats_tiempos_encuestadores
+      // devuelve todo el promedio de la organización (security definer,
+      // scoped por mi_rol()); acá solo nos quedamos con los IDs del equipo.
+      if (perfil?.organizacion_id && ids.length) {
+        const { data: tRes } = await supabase.rpc('get_stats_tiempos_encuestadores', {
+          p_organizacion_id: perfil.organizacion_id,
+        })
+        const t = {}
+        for (const row of tRes || []) {
+          if (ids.includes(row.encuestador_id)) t[row.encuestador_id] = row
+        }
+        setTiempos(t)
+      } else {
+        setTiempos({})
+      }
+
       setEncuestadores((encs || []).map(e => ({
         ...e,
         stats: stats[e.encuestador_id] || { total: 0, completadas: 0 },
@@ -132,7 +152,10 @@ export default function EquipoCoord() {
               <div style={{ fontFamily: 'Syne', fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>{equipo.nombre}</div>
             </div>
             {!loading && (
-              <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <button onClick={() => setShowMensajeEquipo(true)} style={{ padding: '8px 14px', background: 'none', color: 'var(--ink3)', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans' }}>
+                  📢 Mensaje al equipo
+                </button>
                 <div style={{ textAlign: 'center', padding: '8px 14px', background: 'var(--accent-light)', borderRadius: 'var(--r)' }}>
                   <div style={{ fontFamily: 'Syne', fontSize: 22, fontWeight: 800, color: 'var(--accent)' }}>{activos.length}</div>
                   <div style={{ fontSize: 10, color: 'var(--accent2)', fontWeight: 600 }}>Activos</div>
@@ -144,6 +167,23 @@ export default function EquipoCoord() {
               </div>
             )}
           </div>
+        )}
+
+        {showMensajeEquipo && (
+          <MensajeModal
+            perfil={perfil}
+            equipos={equipos}
+            presetEquipoId={equipoId}
+            encuestadores={activos.map(e => ({ id: e.encuestador_id, nombre_completo: e.perfiles?.nombre_completo }))}
+            onClose={() => setShowMensajeEquipo(false)}
+          />
+        )}
+        {mensajeando && (
+          <MensajeModal
+            perfil={perfil}
+            presetEncuestador={{ id: mensajeando.encuestador_id, nombre_completo: mensajeando.perfiles?.nombre_completo }}
+            onClose={() => setMensajeando(null)}
+          />
         )}
 
         {loading && <Spinner center size="lg" />}
@@ -203,6 +243,9 @@ export default function EquipoCoord() {
                         <InfoRow label="Localidad" value={p?.localidad} />
                         <InfoRow label="Provincia" value={p?.provincia} />
                         <InfoRow label="Alta en sistema" value={p?.creado_en ? new Date(p.creado_en).toLocaleDateString('es-AR') : null} />
+                        {tiempos[e.encuestador_id]?.promedio_segundos != null && (
+                          <InfoRow label="Tiempo prom." value={`${Math.floor(tiempos[e.encuestador_id].promedio_segundos / 60)}m ${Math.round(tiempos[e.encuestador_id].promedio_segundos % 60)}s`} />
+                        )}
                         <div style={{ marginTop: 8, display: 'flex', gap: 12, padding: '10px 12px', background: 'var(--paper)', borderRadius: 'var(--r)' }}>
                           {[
                             { v: e.stats.completadas, l: 'Completadas', c: 'var(--accent)' },
@@ -214,6 +257,12 @@ export default function EquipoCoord() {
                             </div>
                           ))}
                         </div>
+                        <button
+                          onClick={(ev) => { ev.stopPropagation(); setMensajeando(e) }}
+                          style={{ marginTop: 4, alignSelf: 'flex-start', padding: '6px 12px', background: 'none', color: 'var(--ink3)', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans' }}
+                        >
+                          📢 Enviar mensaje
+                        </button>
                       </div>
                     )}
                   </div>

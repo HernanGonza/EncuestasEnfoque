@@ -1569,6 +1569,11 @@ export function ZonasYMuestreoModal({ encuesta, equipos, onClose, onSaved }) {
   const [vista, setVista] = useState("equipos");
   const [equipoActivo, setEquipoActivo] = useState(null); // { id, nombre }
   const [encuestadoresEquipo, setEncuestadoresEquipo] = useState([]); // [{ id, nombre }]
+  // Cuota individual (sección 6 del plan): override por encuestador de
+  // config.cuota_por_encuestador. { [encuestador_id]: cuota } — solo trae
+  // entrada si hay override; sin ella se usa la cuota general.
+  const [cuotasIndividuales, setCuotasIndividuales] = useState({});
+  const [cuotaEditando, setCuotaEditando] = useState(null); // encuestador_id en edición
 
   // ── Estado zonas del equipo activo ──
   const [zonas, setZonas] = useState([]); // [{ id, nombre, equipo_id, area_geojson }]
@@ -1582,6 +1587,7 @@ export function ZonasYMuestreoModal({ encuesta, equipos, onClose, onSaved }) {
   const [config, setConfig] = useState(CONFIG_DEFAULT);
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
+  const [tiempoObjetivo, setTiempoObjetivo] = useState(""); // minutos, string vacío = sin objetivo
 
   // ── Drag encuestador ──
   const [draggingEnc, setDraggingEnc] = useState(null); // { id, nombre }
@@ -1654,7 +1660,7 @@ export function ZonasYMuestreoModal({ encuesta, equipos, onClose, onSaved }) {
   useEffect(() => {
     supabase
       .from("encuestas")
-      .select("config_muestreo, fecha_inicio, fecha_fin")
+      .select("config_muestreo, fecha_inicio, fecha_fin, tiempo_objetivo_minutos")
       .eq("id", encuesta.id)
       .single()
       .then(({ data }) => {
@@ -1662,6 +1668,8 @@ export function ZonasYMuestreoModal({ encuesta, equipos, onClose, onSaved }) {
           setConfig((c) => ({ ...c, ...data.config_muestreo }));
         if (data?.fecha_inicio) setFechaInicio(data.fecha_inicio);
         if (data?.fecha_fin) setFechaFin(data.fecha_fin);
+        if (data?.tiempo_objetivo_minutos != null)
+          setTiempoObjetivo(String(data.tiempo_objetivo_minutos));
       });
   }, [encuesta.id]);
 
@@ -1750,6 +1758,25 @@ export function ZonasYMuestreoModal({ encuesta, equipos, onClose, onSaved }) {
       });
       setEncuestadoresEquipo(todosAsignables);
 
+      // Cargar overrides de cuota individual (sección 6) de este equipo
+      if (encs.length > 0) {
+        const { data: cuotasRows } = await supabase
+          .from("cuotas_individuales")
+          .select("encuestador_id, cuota")
+          .eq("encuesta_id", encuesta.id)
+          .in(
+            "encuestador_id",
+            encs.map((e) => e.id),
+          );
+        const mapaCuotas = {};
+        (cuotasRows || []).forEach((r) => {
+          mapaCuotas[r.encuestador_id] = r.cuota;
+        });
+        setCuotasIndividuales(mapaCuotas);
+      } else {
+        setCuotasIndividuales({});
+      }
+
       // Cargar asignaciones existentes
       if (lista.length > 0) {
         const { data: aes } = await supabase
@@ -1778,6 +1805,39 @@ export function ZonasYMuestreoModal({ encuesta, equipos, onClose, onSaved }) {
       setError(e.message);
     }
     setLoadingZonas(false);
+  }
+
+  // ── Cuota individual (sección 6): override por encuestador de la cuota
+  // general de config.cuota_por_encuestador. valor vacío/null = quitar el
+  // override y volver a la cuota general.
+  async function guardarCuotaIndividual(encuestadorId, valor) {
+    const cuota = valor === "" || valor == null ? null : parseInt(valor, 10);
+    try {
+      if (cuota == null || Number.isNaN(cuota)) {
+        const { error } = await supabase.rpc("quitar_cuota_individual", {
+          p_encuesta_id: encuesta.id,
+          p_encuestador_id: encuestadorId,
+        });
+        if (error) throw error;
+        setCuotasIndividuales((c) => {
+          const copia = { ...c };
+          delete copia[encuestadorId];
+          return copia;
+        });
+      } else {
+        const { error } = await supabase.rpc("set_cuota_individual", {
+          p_encuesta_id: encuesta.id,
+          p_encuestador_id: encuestadorId,
+          p_cuota: cuota,
+        });
+        if (error) throw error;
+        setCuotasIndividuales((c) => ({ ...c, [encuestadorId]: cuota }));
+      }
+      mostrarToast("✅ Cuota actualizada");
+    } catch (e) {
+      setError(e.message);
+    }
+    setCuotaEditando(null);
   }
 
   // ── Agregar nueva zona ──
@@ -2029,6 +2089,7 @@ export function ZonasYMuestreoModal({ encuesta, equipos, onClose, onSaved }) {
           config_muestreo: config,
           fecha_inicio: fechaInicio || null,
           fecha_fin: fechaFin || null,
+          tiempo_objetivo_minutos: tiempoObjetivo ? parseInt(tiempoObjetivo) : null,
         })
         .eq("id", encuesta.id);
       if (configErr) throw configErr;
@@ -2677,6 +2738,47 @@ export function ZonasYMuestreoModal({ encuesta, equipos, onClose, onSaved }) {
                       .
                     </div>
                   )}
+                  <div style={{ marginTop: 16 }}>
+                    <label
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "var(--ink2)",
+                        display: "block",
+                        marginBottom: 6,
+                      }}
+                    >
+                      ⏱️ Tiempo objetivo por encuesta (minutos)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={tiempoObjetivo}
+                      onChange={(e) => setTiempoObjetivo(e.target.value)}
+                      placeholder="Sin objetivo"
+                      style={{
+                        width: "100%",
+                        maxWidth: 200,
+                        padding: "9px 12px",
+                        border: "1.5px solid var(--border2)",
+                        borderRadius: "var(--r)",
+                        fontSize: 13,
+                        fontFamily: "DM Sans",
+                        background: "var(--surface)",
+                        color: "var(--ink)",
+                        outline: "none",
+                      }}
+                    />
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--ink4)",
+                        marginTop: 4,
+                      }}
+                    >
+                      Vacío = sin objetivo, no se muestra alerta de tiempo en la app ni en el panel.
+                    </div>
+                  </div>
                 </div>
                 {(encuesta?.tipo_encuesta === "callejera" ||
                   encuesta?.tipo_encuesta === "telefonica") && (
@@ -2793,12 +2895,44 @@ export function ZonasYMuestreoModal({ encuesta, equipos, onClose, onSaved }) {
       {encuestadoresEquipo.length === 0 && <div style={{ fontSize: 11, color: "var(--ink3)", fontStyle: "italic" }}>Sin encuestadores</div>}
       {encuestadoresEquipo.map(enc => {
         const seleccionado = draggingEnc?.id === enc.id;
+        const cuotaOverride = cuotasIndividuales[enc.id];
         return (
-          <div key={enc.id} onClick={() => setDraggingEnc(seleccionado ? null : enc)}
-            style={{ padding: "6px 8px", borderRadius: "var(--r)", fontSize: 12, fontWeight: 600, background: seleccionado ? "var(--accent)" : "var(--paper)", color: seleccionado ? "#fff" : "var(--ink)", border: `1.5px solid ${seleccionado ? "var(--accent)" : "var(--border2)"}`, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", gap: 5, transition: "all .15s" }}>
-            <span style={{ flexShrink: 0 }}>{seleccionado ? "✓" : "+"}</span>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{enc.nombre}</span>
-            {enc.esCoordinador && <span style={{ fontSize: 9, fontWeight: 700, background: "#7c3aed22", color: "#7c3aed", border: "1px solid #7c3aed44", borderRadius: 100, padding: "1px 4px", flexShrink: 0 }}>C</span>}
+          <div key={enc.id}>
+            <div onClick={() => setDraggingEnc(seleccionado ? null : enc)}
+              style={{ padding: "6px 8px", borderRadius: "var(--r)", fontSize: 12, fontWeight: 600, background: seleccionado ? "var(--accent)" : "var(--paper)", color: seleccionado ? "#fff" : "var(--ink)", border: `1.5px solid ${seleccionado ? "var(--accent)" : "var(--border2)"}`, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", gap: 5, transition: "all .15s" }}>
+              <span style={{ flexShrink: 0 }}>{seleccionado ? "✓" : "+"}</span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{enc.nombre}</span>
+              {enc.esCoordinador && <span style={{ fontSize: 9, fontWeight: 700, background: "#7c3aed22", color: "#7c3aed", border: "1px solid #7c3aed44", borderRadius: 100, padding: "1px 4px", flexShrink: 0 }}>C</span>}
+            </div>
+            {/* Cuota individual (sección 6): override de cuota_por_encuestador
+                solo para encuestadores, no aplica a coordinadores. */}
+            {!enc.esCoordinador && (
+              cuotaEditando === enc.id ? (
+                <div onClick={(ev) => ev.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px 4px" }}>
+                  <input
+                    type="number"
+                    min={1}
+                    autoFocus
+                    defaultValue={cuotaOverride ?? ""}
+                    placeholder="general"
+                    style={{ width: 56, fontSize: 11, padding: "2px 4px", borderRadius: 4, border: "1px solid var(--border2)" }}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter") guardarCuotaIndividual(enc.id, ev.target.value);
+                      if (ev.key === "Escape") setCuotaEditando(null);
+                    }}
+                    onBlur={(ev) => guardarCuotaIndividual(enc.id, ev.target.value)}
+                  />
+                </div>
+              ) : (
+                <div
+                  onClick={(ev) => { ev.stopPropagation(); setCuotaEditando(enc.id); }}
+                  title="Cuota individual — vacío usa la cuota general"
+                  style={{ fontSize: 10, color: cuotaOverride != null ? "var(--accent)" : "var(--ink3)", fontWeight: cuotaOverride != null ? 700 : 500, padding: "0 8px 4px", cursor: "pointer" }}
+                >
+                  {cuotaOverride != null ? `Cuota: ${cuotaOverride} ✎` : "Cuota general ✎"}
+                </div>
+              )
+            )}
           </div>
         );
       })}

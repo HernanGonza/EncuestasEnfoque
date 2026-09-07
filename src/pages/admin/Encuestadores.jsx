@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Topbar } from '../../components/layout'
 import { Spinner } from '../../components/ui'
+import MensajeModal from '../../components/MensajeModal'
 import styles from './Page.module.css'
 
 function InviteModal({ onClose, onSaved, orgId, session }) {
@@ -198,9 +199,12 @@ export default function Encuestadores() {
   const [showInvite,    setShowInvite]    = useState(false)
   const [asignando,     setAsignando]     = useState(null)
   const [desactivando,  setDesactivando]  = useState(null)
+  const [showMensaje,   setShowMensaje]   = useState(false)
+  const [mensajeando,   setMensajeando]   = useState(null) // encuestador puntual
   const [session,       setSession]       = useState(null)
   const [busqueda,      setBusqueda]      = useState('')
   const [filtroEquipo,  setFiltroEquipo]  = useState('')
+  const [tiemposPorEncuestador, setTiemposPorEncuestador] = useState({}) // { [encuestador_id]: { promedio_segundos, total_completadas } }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -209,16 +213,20 @@ export default function Encuestadores() {
   async function fetchData() {
     if (!perfil?.organizacion_id) return
     setLoading(true)
-    const [eRes, eqRes] = await Promise.all([
+    const [eRes, eqRes, tRes] = await Promise.all([
       supabase.from('perfiles')
         .select('*, equipo_encuestadores(equipo_id, equipos(nombre))')
         .eq('rol', 'encuestador')
         .eq('organizacion_id', perfil.organizacion_id)
         .order('nombre_completo'),
       supabase.from('equipos').select('id, nombre').eq('organizacion_id', perfil.organizacion_id).order('nombre'),
+      supabase.rpc('get_stats_tiempos_encuestadores', { p_organizacion_id: perfil.organizacion_id }),
     ])
     setEncuestadores(eRes.data || [])
     setEquipos(eqRes.data || [])
+    const tiempos = {}
+    for (const row of tRes.data || []) tiempos[row.encuestador_id] = row
+    setTiemposPorEncuestador(tiempos)
     setLoading(false)
   }
 
@@ -254,10 +262,33 @@ export default function Encuestadores() {
 
   return (
     <div className={styles.page}>
-      <Topbar title="Encuestadores" action={{ label: '+ Invitar', onClick: () => setShowInvite(true) }} />
+      <Topbar
+        title="Encuestadores"
+        action={{ label: '+ Invitar', onClick: () => setShowInvite(true) }}
+        actions={
+          <button onClick={() => setShowMensaje(true)} style={{ padding: '8px 16px', background: 'var(--accent-light)', color: 'var(--accent2)', border: '1.5px solid var(--accent2)', borderRadius: 'var(--r)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans' }}>
+            📢 Mensaje
+          </button>
+        }
+      />
 
       {showInvite && session && (
         <InviteModal orgId={perfil?.organizacion_id} session={session} onClose={() => setShowInvite(false)} onSaved={() => { setShowInvite(false); fetchData() }} />
+      )}
+      {showMensaje && (
+        <MensajeModal
+          perfil={perfil}
+          equipos={equipos}
+          encuestadores={activos.map(e => ({ id: e.id, nombre_completo: e.nombre_completo }))}
+          onClose={() => setShowMensaje(false)}
+        />
+      )}
+      {mensajeando && (
+        <MensajeModal
+          perfil={perfil}
+          presetEncuestador={{ id: mensajeando.id, nombre_completo: mensajeando.nombre_completo }}
+          onClose={() => setMensajeando(null)}
+        />
       )}
       {asignando && (
         <AsignarEquipoModal
@@ -355,6 +386,7 @@ export default function Encuestadores() {
               {lista.map((enc, i) => {
                 const ci = i % COLORS.length
                 const equipoNombre = enc.equipo_encuestadores?.[0]?.equipos?.nombre
+                const tiempo = tiemposPorEncuestador[enc.id]
                 return (
                   <div key={enc.id} style={{ background: 'var(--paper)', border: `1px solid ${tab === 'inactivos' ? '#fca5a5' : 'var(--border)'}`, borderRadius: 'var(--r2)', padding: '14px 18px', display: 'flex', alignItems: 'flex-start', gap: 12, opacity: tab === 'inactivos' ? 0.85 : 1 }}>
                     <div style={{ width: 38, height: 38, borderRadius: '50%', background: COLORS[ci], color: TEXT_COLORS[ci], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
@@ -368,6 +400,11 @@ export default function Encuestadores() {
                           ? <span style={{ padding: '2px 8px', borderRadius: 100, fontSize: 11, fontWeight: 600, background: 'var(--accent-light)', color: 'var(--accent2)' }}>{equipoNombre}</span>
                           : <span style={{ padding: '2px 8px', borderRadius: 100, fontSize: 11, background: 'var(--warning-light)', color: '#b45309', fontWeight: 600 }}>⚠ Sin equipo</span>
                         )}
+                        {tab === 'activos' && tiempo?.promedio_segundos != null && (
+                          <span style={{ padding: '2px 8px', borderRadius: 100, fontSize: 11, fontWeight: 600, background: 'var(--surface)', color: 'var(--ink3)' }}>
+                            ⏱️ {Math.floor(tiempo.promedio_segundos / 60)}m {Math.round(tiempo.promedio_segundos % 60)}s prom. ({tiempo.total_completadas})
+                          </span>
+                        )}
                       </div>
                       {tab === 'inactivos' && enc.motivo_desactivacion && (
                         <div style={{ marginTop: 6, padding: '6px 10px', background: 'var(--danger-light)', borderRadius: 'var(--r)', fontSize: 12, color: 'var(--danger)' }}>
@@ -379,6 +416,9 @@ export default function Encuestadores() {
                     <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                       {tab === 'activos' ? (
                         <>
+                          <button onClick={() => setMensajeando(enc)} style={{ padding: '6px 12px', background: 'none', color: 'var(--ink3)', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans' }}>
+                            📢 Mensaje
+                          </button>
                           <button onClick={() => setAsignando(enc)} style={{ padding: '6px 12px', background: 'var(--accent-light)', color: 'var(--accent2)', border: '1.5px solid var(--accent2)', borderRadius: 'var(--r)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans' }}>
                             Equipo
                           </button>

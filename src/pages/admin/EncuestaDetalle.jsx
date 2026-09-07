@@ -10,6 +10,8 @@ import {
   ArcElement, PointElement, LineElement, Tooltip, Legend, Filler
 } from 'chart.js'
 import { cacheGet, cacheSet, cacheClear } from '../../lib/cache'
+import ReportesAutomaticos from '../../components/ReportesAutomaticos'
+import ReporteVisualZona from '../../components/ReporteVisualZona'
 import styles from './Page.module.css'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend, Filler)
@@ -736,7 +738,7 @@ function EquiposSnapshot({ snap }) {
   )
 }
 
-function VistaResultados({ preguntas, resumen, respuestas, encuestadores, equipos, filtros, onFiltroChange, loadingR, sesionesGPS, onCargarMapa, loadingGPS, statsZona, onCargarZonas, loadingZonas, configSnapshot }) {
+function VistaResultados({ encuesta, preguntas, resumen, respuestas, encuestadores, equipos, filtros, onFiltroChange, loadingR, sesionesGPS, onCargarMapa, loadingGPS, statsZona, onCargarZonas, loadingZonas, configSnapshot, tiempoStats }) {
   const [vista, setVista] = useState('resumen')
   const [encZonasAbiertas, setEncZonasAbiertas] = useState({})
   const [sortEnc, setSortEnc] = useState({ campo: null, dir: 'desc' })
@@ -779,6 +781,15 @@ function VistaResultados({ preguntas, resumen, respuestas, encuestadores, equipo
     { label: 'Última respuesta', value: resumen?.ultima_respuesta ? new Date(resumen.ultima_respuesta).toLocaleDateString('es-AR') : '—', color: 'var(--metric-d)' },
   ]
 
+  const promedioSeg     = tiempoStats?.promedio_segundos != null ? Number(tiempoStats.promedio_segundos) : null
+  const objetivoMin     = tiempoStats?.tiempo_objetivo_minutos ?? null
+  const dentroObjetivo  = promedioSeg != null && objetivoMin != null ? promedioSeg <= objetivoMin * 60 : null
+  const formatMinSeg = (seg) => {
+    const m = Math.floor(seg / 60)
+    const s = Math.round(seg % 60)
+    return `${m}m ${s}s`
+  }
+
   const hayFiltros = filtros.equipo_id || filtros.encuestador_id || filtros.fecha_desde || filtros.fecha_hasta
   const inp = { padding: '6px 10px', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 13, fontFamily: 'DM Sans', background: 'var(--paper)' }
 
@@ -794,6 +805,26 @@ function VistaResultados({ preguntas, resumen, respuestas, encuestadores, equipo
           </div>
         ))}
       </div>
+
+      {/* Tiempo promedio vs. objetivo */}
+      {promedioSeg != null && (
+        <div style={{
+          background: objetivoMin == null ? 'var(--paper)' : dentroObjetivo ? '#d8f3dc' : '#fee2e2',
+          border: `1px solid ${objetivoMin == null ? 'var(--border)' : dentroObjetivo ? '#1a472a' : '#991b1b'}`,
+          borderRadius: 'var(--r2)', padding: '14px 18px',
+          display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+        }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: 1 }}>⏱️ Tiempo promedio</div>
+            <div style={{ fontFamily: 'var(--font-num)', fontSize: 22, fontWeight: 600, marginTop: 2 }}>{formatMinSeg(promedioSeg)}</div>
+          </div>
+          {objetivoMin != null && (
+            <div style={{ fontSize: 13, fontWeight: 600, color: dentroObjetivo ? '#1a472a' : '#991b1b' }}>
+              {dentroObjetivo ? '🟢 Dentro del objetivo' : '🔴 Por encima del objetivo'} (objetivo: {objetivoMin} min)
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filtros */}
       <div style={{ background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--r2)', padding: '12px 16px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -842,7 +873,7 @@ function VistaResultados({ preguntas, resumen, respuestas, encuestadores, equipo
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)' }}>
-        {[['resumen','Resumen'],['preguntas','Por pregunta'],['encuestadores','Encuestadores'],['zonas','📍 Por zona'],['equipos','👥 Equipos'],['mapa','🗺️ Mapa']].map(([v, label]) => (
+        {[['resumen','Resumen'],['preguntas','Por pregunta'],['encuestadores','Encuestadores'],['zonas','📍 Por zona'],['equipos','👥 Equipos'],['mapa','🗺️ Mapa'],['visual','🎯 Reporte visual'],['reportes','📄 Reportes']].map(([v, label]) => (
           <button key={v} onClick={() => setVista(v)} style={{
             padding: '8px 16px', border: 'none', background: 'none', cursor: 'pointer',
             fontSize: 13, fontFamily: 'DM Sans', marginBottom: -1,
@@ -947,6 +978,17 @@ function VistaResultados({ preguntas, resumen, respuestas, encuestadores, equipo
           loading={loadingGPS}
         />
       )}
+
+      {vista === 'visual' && (
+        <ReporteVisualZona encuesta={encuesta} preguntas={preguntas} />
+      )}
+
+      {vista === 'reportes' && (
+        <ReportesAutomaticos
+          encuesta={encuesta} preguntas={preguntas}
+          statsZona={statsZona} onCargarZonas={onCargarZonas} loadingZonas={loadingZonas}
+        />
+      )}
     </div>
   )
 }
@@ -970,6 +1012,7 @@ export default function EncuestaDetalle() {
   const [statsZona,     setStatsZona]     = useState(null)
   const [loadingZonas,  setLoadingZonas]  = useState(false)
   const [configSnapshot, setConfigSnapshot] = useState(null)
+  const [tiempoStats,   setTiempoStats]   = useState(null) // { promedio_segundos, tiempo_objetivo_minutos }
 
   const [filtroEquipo,      setFiltroEquipo]      = useState(null)
   const [filtroEncuestador, setFiltroEncuestador] = useState(null)
@@ -1053,6 +1096,7 @@ export default function EncuestaDetalle() {
       cacheClear(`enc_resp:${id}:base`)
       cacheSet(`enc_resp:${id}:base`, data.respuestas || [], 60_000)
       pendingRef.current = null
+      fetchTiempoStats()
     } else {
       cacheClear(`enc_base:${id}`)
       cacheClear(`enc_resp:${id}`)
@@ -1066,7 +1110,7 @@ export default function EncuestaDetalle() {
     if (!encuesta || encuesta.estado_produccion !== 'publicada') return
     if (!hayFiltros) return
     clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => fetchRespuestas(), 300)
+    debounceRef.current = setTimeout(() => { fetchRespuestas(); fetchTiempoStats() }, 300)
     return () => clearTimeout(debounceRef.current)
   }, [filtrosKey, encuesta?.id])
 
@@ -1101,6 +1145,7 @@ export default function EncuestaDetalle() {
       setResumen(payload.resumen);   setEncuestadores(payload.encuestadores)
       setEquipos(payload.equipos);   setRespuestas(respBase)
       setConfigSnapshot(payload.configSnapshot)
+      fetchTiempoStats()
     } catch (e) { console.error(e); setError(e.message) }
     setLoading(false)
   }
@@ -1123,6 +1168,23 @@ export default function EncuestaDetalle() {
       setRespuestas(result)
     } catch (e) { console.error('fetchRespuestas:', e) }
     setLoadingR(false)
+  }
+
+  // Tiempo promedio vs. objetivo. Nota: get_resultados_encuesta_filtrado no
+  // soporta p_fecha_desde/p_fecha_hasta (solo equipo/zona/encuestador), así
+  // que el promedio no se recorta por rango de fechas como el resto de
+  // "respuestas" — queda igual mientras solo cambien los filtros de fecha.
+  async function fetchTiempoStats(overrides = {}) {
+    if (!id) return
+    const equipoId      = 'equipo_id'      in overrides ? overrides.equipo_id      : filtroEquipo
+    const encuestadorId = 'encuestador_id' in overrides ? overrides.encuestador_id : filtroEncuestador
+    try {
+      const { data, error: rpcErr } = await supabase.rpc('get_resultados_encuesta_filtrado', {
+        p_encuesta_id: id, p_equipo_id: equipoId || null, p_encuestador_id: encuestadorId || null,
+      })
+      if (rpcErr) throw rpcErr
+      if (data) setTiempoStats({ promedio_segundos: data.promedio_segundos, tiempo_objetivo_minutos: data.tiempo_objetivo_minutos })
+    } catch (e) { console.error('fetchTiempoStats:', e) }
   }
 
   async function cargarSesionesGPS() {
@@ -1157,6 +1219,7 @@ export default function EncuestaDetalle() {
       setFiltroEquipo(null); setFiltroEncuestador(null); setFiltroDesde(null); setFiltroHasta(null)
       const base = cacheGet(`enc_resp:${id}:base`)
       if (base) setRespuestas(base)
+      fetchTiempoStats({ equipo_id: null, encuestador_id: null })
       return
     }
     if (campo === 'equipo_id')      { setFiltroEquipo(valor); setFiltroEncuestador(null); return }
@@ -1191,12 +1254,12 @@ export default function EncuestaDetalle() {
       <div className={styles.content}>
         {error && <div style={{ padding: '10px 16px', background: 'var(--danger-light)', border: '1px solid var(--danger)', borderRadius: 'var(--r)', fontSize: 13, color: 'var(--danger)', marginBottom: 12 }}>Error: {error}</div>}
         {['publicada', 'completada'].includes(encuesta.estado_produccion)
-          ? <VistaResultados preguntas={preguntas} resumen={resumen} respuestas={respuestas}
+          ? <VistaResultados encuesta={encuesta} preguntas={preguntas} resumen={resumen} respuestas={respuestas}
               encuestadores={encuestadores} equipos={equipos} filtros={filtros}
               onFiltroChange={handleFiltroChange} loadingR={loadingR}
               sesionesGPS={sesionesGPS} onCargarMapa={cargarSesionesGPS} loadingGPS={loadingGPS}
               statsZona={statsZona} onCargarZonas={cargarStatsZona} loadingZonas={loadingZonas}
-              configSnapshot={configSnapshot} />
+              configSnapshot={configSnapshot} tiempoStats={tiempoStats} />
           : <VistaProduccion encuesta={encuesta} preguntas={preguntas} />
         }
       </div>

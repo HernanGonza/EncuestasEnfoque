@@ -44,6 +44,7 @@ export default function EncuestasCoord() {
   const [loading,   setLoading]   = useState(true)
   const [simulando, setSimulando] = useState(null)
   const [detalle,   setDetalle]   = useState(null)
+  const [tiempos,   setTiempos]   = useState({}) // { [encuesta_id]: { promedio_segundos, tiempo_objetivo_minutos } }
 
   // Cargar equipos
   useEffect(() => {
@@ -108,6 +109,24 @@ export default function EncuestasCoord() {
         completadas: sesCompletadas[ee.encuesta_id] || 0,
       })))
       setLoading(false)
+
+      // Tiempo promedio vs. objetivo, por encuesta, scoped al equipo del
+      // coordinador (mismo criterio de RRLS que el resto: get_resultados_
+      // encuesta_filtrado es security definer + respeta mi_rol()).
+      if (encIds.length) {
+        const resultados = await Promise.all(
+          encIds.map(eid => supabase.rpc('get_resultados_encuesta_filtrado', {
+            p_encuesta_id: eid, p_equipo_id: equipoId,
+          }).then(({ data }) => [eid, data]).catch(() => [eid, null])),
+        )
+        const t = {}
+        resultados.forEach(([eid, data]) => {
+          if (data) t[eid] = { promedio_segundos: data.promedio_segundos, tiempo_objetivo_minutos: data.tiempo_objetivo_minutos }
+        })
+        setTiempos(t)
+      } else {
+        setTiempos({})
+      }
     }
     load()
   }, [equipoId])
@@ -163,6 +182,10 @@ export default function EncuestasCoord() {
                 const tipoCfg   = TIPO_CFG[enc.tipo_encuesta] || TIPO_CFG.domiciliaria
                 const isOpen    = detalle === ee.encuesta_id
                 const publicada = enc.estado_produccion === 'publicada'
+                const tiempo    = tiempos[ee.encuesta_id]
+                const promedioSeg = tiempo?.promedio_segundos != null ? Number(tiempo.promedio_segundos) : null
+                const objetivoMin = tiempo?.tiempo_objetivo_minutos ?? null
+                const dentroObjetivo = promedioSeg != null && objetivoMin != null ? promedioSeg <= objetivoMin * 60 : null
 
                 return (
                   <div key={i} className={`${styles.encuestaCard} ${publicada ? styles.encuestaCardPublicada : ''}`} style={{ cursor: 'default' }}>
@@ -181,6 +204,12 @@ export default function EncuestasCoord() {
                       {enc.fecha_inicio && <span>📅 Desde {new Date(enc.fecha_inicio).toLocaleDateString('es-AR')}</span>}
                       {enc.fecha_fin && <span>⏳ Hasta {new Date(enc.fecha_fin).toLocaleDateString('es-AR')}</span>}
                       <span>🗓 Asignada {new Date(ee.asignado_en).toLocaleDateString('es-AR')}</span>
+                      {promedioSeg != null && (
+                        <span style={{ fontWeight: 600, color: objetivoMin == null ? 'var(--ink3)' : dentroObjetivo ? '#1a472a' : '#991b1b' }}>
+                          ⏱️ {Math.floor(promedioSeg / 60)}m {Math.round(promedioSeg % 60)}s prom.
+                          {objetivoMin != null && (dentroObjetivo ? ' 🟢' : ' 🔴')}
+                        </span>
+                      )}
                     </div>
 
                     <div className={styles.encuestaActions}>

@@ -14,6 +14,24 @@ const TIPOS = [
 ]
 const TIPOS_CON_OPCIONES = ['opcion_multiple', 'checkbox', 'desplegable']
 const TIPOS_MATRIZ = ['matriz']
+// Taxonomía de preguntas "especiales" (sección 8 del plan de reportes): sin
+// esto marcado, los reportes automáticos de candidato/perfil demográfico no
+// tienen forma de saber qué pregunta es cuál sin adivinar por el texto
+// literal. 'participa' ya existe y se usa en producción (no se toca acá,
+// se sigue seteando igual que hasta ahora).
+// El plan sugiere 'genero', pero EncuestaDetalle.jsx ya trae un filtro
+// dormido para 'sexo' (`p.clave_base === 'sexo'`, línea ~887) que nunca
+// llegó a usarse porque no había forma de setearlo — se respeta ese valor
+// ya presente en el código en vez de introducir uno nuevo para lo mismo.
+const CLAVE_BASE_OPCIONES = [
+  { value: '',                     label: '— Ninguna —' },
+  { value: 'participa',            label: 'Participación (¿participa de la encuesta?)' },
+  { value: 'candidato_intendente', label: 'Candidato a intendente' },
+  { value: 'edad',                 label: 'Edad' },
+  { value: 'sexo',                 label: 'Género' },
+  { value: 'nivel_educativo',      label: 'Nivel educativo' },
+  { value: 'situacion_laboral',    label: 'Situación laboral' },
+]
 const ESTADO_CONFIG = {
   pendiente:    { label: 'Pendiente',    color: '#b45309', bg: '#fef3c7' },
   en_proceso:   { label: 'En proceso',   color: '#0369a1', bg: '#e0f2fe' },
@@ -245,6 +263,14 @@ function PreguntaCard({ pregunta, index, total, todasPreguntas, onUpdate, onDele
                 <input type="checkbox" checked={pregunta.requerida} onChange={e => onUpdate({ ...pregunta, requerida: e.target.checked })} />
                 Requerida
               </label>
+            </div>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <label style={labelStyle}>Tipo especial (para reportes automáticos)</label>
+              <select value={pregunta.clave_base || ''}
+                onChange={e => onUpdate({ ...pregunta, clave_base: e.target.value || null })}
+                style={inputStyle}>
+                {CLAVE_BASE_OPCIONES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
             </div>
           </div>
 
