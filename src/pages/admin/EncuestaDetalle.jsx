@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Topbar } from '../../components/layout'
-import { Spinner } from '../../components/ui'
+import { Spinner, Select } from '../../components/ui'
 import { Bar, Pie, Line, Doughnut } from 'react-chartjs-2'
 import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement,
@@ -599,11 +599,11 @@ function MapaEncuesta({ sesiones, columnas, onCargar, loading }) {
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--r2)', padding: '14px 16px' }}>
         <div style={{ flex: 1, minWidth: 280 }}>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Colorear por respuesta a</label>
-          <select value={filtroCol} onChange={e => { setFiltroCol(e.target.value); setCapas({}) }}
-            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 13, fontFamily: 'DM Sans', background: 'var(--surface)', color: 'var(--ink)', outline: 'none' }}>
+          <Select value={filtroCol} onChange={e => { setFiltroCol(e.target.value); setCapas({}) }}
+            style={{ padding: '8px 10px', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 13, fontFamily: 'DM Sans', background: 'var(--surface)', color: 'var(--ink)', outline: 'none' }}>
             <option value="">— Todos los puntos (un color) —</option>
             {columnas.map(c => <option key={c.id} value={c.id}>{c.texto?.slice(0,68)}</option>)}
-          </select>
+          </Select>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, paddingBottom: 2 }}>
           <strong>{puntos.length}</strong> con GPS
@@ -831,17 +831,17 @@ function VistaResultados({ encuesta, preguntas, resumen, respuestas, encuestador
       <div style={{ background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--r2)', padding: '12px 16px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)' }}>Equipo</label>
-          <select value={filtros.equipo_id || ''} onChange={e => onFiltroChange('equipo_id', e.target.value || null)} style={inp}>
+          <Select value={filtros.equipo_id || ''} onChange={e => onFiltroChange('equipo_id', e.target.value || null)} style={inp}>
             <option value="">Todos</option>
             {equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre}</option>)}
-          </select>
+          </Select>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)' }}>Encuestador</label>
-          <select value={filtros.encuestador_id || ''} onChange={e => onFiltroChange('encuestador_id', e.target.value || null)} disabled={!filtros.equipo_id} style={inp}>
+          <Select value={filtros.encuestador_id || ''} onChange={e => onFiltroChange('encuestador_id', e.target.value || null)} disabled={!filtros.equipo_id} style={inp}>
             <option value="">Todos</option>
             {encuestadoresFiltrados.map(e => <option key={e.encuestador_id} value={e.encuestador_id}>{e.nombre_completo}</option>)}
-          </select>
+          </Select>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)' }}>Desde</label>

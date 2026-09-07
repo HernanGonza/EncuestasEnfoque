@@ -6,6 +6,7 @@ import { Spinner } from '../../components/ui'
 import Chart from 'chart.js/auto'
 import { generarPDF } from '../../lib/generarPDF'
 import CompararEncuestas from '../../components/CompararEncuestas'
+import { Select } from '../../components/ui'
 import styles from './Page.module.css'
 import { BarChart2, PieChart, FileText, Download, Filter, RefreshCw, ChevronDown, ChevronUp, Zap, Plus, Trash2, MapPin, Scale } from 'lucide-react'
 
@@ -492,25 +493,25 @@ function GraficoCruce({ preguntas, sesiones, onRemove, onCruceChange, index }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, marginBottom: 16 }}>
         <div>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Pregunta — eje X</label>
-          <select value={pregA} onChange={e => setPregA(e.target.value)} style={sel}>
+          <Select value={pregA} onChange={e => setPregA(e.target.value)} style={sel}>
             <option value="">Seleccionar...</option>
             {comparables.map(p => <option key={p.id} value={p.id}>{p.texto.slice(0,55)}</option>)}
-          </select>
+          </Select>
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Cruzar con</label>
-          <select value={pregB} onChange={e => setPregB(e.target.value)} style={sel}>
+          <Select value={pregB} onChange={e => setPregB(e.target.value)} style={sel}>
             <option value="">Seleccionar...</option>
             {comparables.filter(p => p.id !== pregA).map(p => <option key={p.id} value={p.id}>{p.texto.slice(0,55)}</option>)}
-          </select>
+          </Select>
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Tipo</label>
-          <select value={tipoGrafico} onChange={e => setTipoGrafico(e.target.value)} style={{ ...sel, width: 'auto', minWidth: 140 }}>
+          <Select value={tipoGrafico} onChange={e => setTipoGrafico(e.target.value)} style={{ ...sel, width: 'auto', minWidth: 140 }}>
             <option value="stacked">Barras apiladas</option>
             <option value="grouped">Barras agrupadas</option>
             <option value="scatter">Dispersión</option>
-          </select>
+          </Select>
         </div>
       </div>
 
@@ -985,10 +986,14 @@ ${datosHTML}
 }
 
 /* ── Mapa de respuestas georreferenciadas con filtro por pregunta ── */
+// Antes tenía 3 tonos de azul (#0369a1, #1d4ed8, #0284c7), 2 verdes casi
+// iguales (#047857, #059669) y 2 naranjas/marrones (#b45309, #c2410c) que se
+// confundían entre sí, sobre todo en el PDF exportado. Recorre la rueda de
+// matices una sola vez por color, sin repetir familia.
 const PALETA_MAPA = [
-  '#1a472a','#0369a1','#7c3aed','#b45309','#be185d',
-  '#047857','#dc2626','#d97706','#0891b2','#6d28d9',
-  '#059669','#c2410c','#1d4ed8','#db2777','#0284c7',
+  '#1a472a','#2563eb','#dc2626','#ea580c','#7c3aed',
+  '#db2777','#ca8a04','#0d9488','#78350f','#65a30d',
+  '#4338ca','#9f1239','#f472b6','#57534e','#a3e635',
 ]
 
 // Cargar Leaflet.markercluster dinámicamente
@@ -1222,13 +1227,13 @@ function MapaRespuestas({ sesiones, columnas, onCapturarMapa }) {
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>
             Colorear por respuesta a
           </label>
-          <select value={filtroCol} onChange={e => { setFiltroCol(e.target.value); setCapas({}) }}
-            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 13, fontFamily: 'DM Sans', background: 'var(--surface)', color: 'var(--ink)', outline: 'none' }}>
+          <Select value={filtroCol} onChange={e => { setFiltroCol(e.target.value); setCapas({}) }}
+            style={{ padding: '8px 10px', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 13, fontFamily: 'DM Sans', background: 'var(--surface)', color: 'var(--ink)', outline: 'none' }}>
             <option value="">— Todos los puntos (un color) —</option>
             {colsFiltro.map(c => (
               <option key={c.id} value={c.id}>{c.texto?.slice(0,68)}</option>
             ))}
-          </select>
+          </Select>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, paddingBottom: 2 }}>
           <MapPin size={14} color="var(--accent)" />
@@ -1660,17 +1665,17 @@ export default function Reportes() {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, paddingTop: 14 }}>
                         <div>
                           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', display: 'block', marginBottom: 4 }}>Equipo</label>
-                          <select value={filtroEquipo} onChange={e => { setFiltroEquipo(e.target.value); setFiltroEncuestador('') }} style={inp}>
+                          <Select value={filtroEquipo} onChange={e => { setFiltroEquipo(e.target.value); setFiltroEncuestador('') }} style={inp}>
                             <option value="">Todos</option>
                             {equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre}</option>)}
-                          </select>
+                          </Select>
                         </div>
                         <div>
                           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', display: 'block', marginBottom: 4 }}>Encuestador</label>
-                          <select value={filtroEncuestador} onChange={e => setFiltroEncuestador(e.target.value)} disabled={!filtroEquipo} style={inp}>
+                          <Select value={filtroEncuestador} onChange={e => setFiltroEncuestador(e.target.value)} disabled={!filtroEquipo} style={inp}>
                             <option value="">Todos</option>
                             {encuestadoresFiltrados.map(e => <option key={e.encuestador_id} value={e.encuestador_id}>{e.nombre_completo}</option>)}
-                          </select>
+                          </Select>
                         </div>
                         <div>
                           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', display: 'block', marginBottom: 4 }}>Desde</label>

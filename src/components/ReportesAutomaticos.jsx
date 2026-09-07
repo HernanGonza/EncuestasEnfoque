@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { REPORTES_DEFS, calcularReporte, PALETA_REPORTES } from '../lib/reportesAutomaticos'
+import { REPORTES_DEFS, calcularReporte, PALETA_REPORTES, CLAVES_ESPECIALES, buscarPregunta } from '../lib/reportesAutomaticos'
 import { generarPDF } from '../lib/generarPDF'
+import { Select } from './ui'
 
 // Reportes automáticos — Sección 8 del plan. A diferencia de "Reportes" (el
 // generador manual con cruces armados a mano por el admin), acá el admin
@@ -272,11 +273,92 @@ ${cuerpo}
 </body></html>`
 }
 
+// Preguntas que un admin puede asignar a mano a un rol especial —
+// mismo criterio de tipos que usa el resto de reportesAutomaticos.js para
+// tratar una pregunta como "de opciones" (ver opcionesDe/EXCLUIR).
+const TIPOS_ELEGIBLES = ['si_no', 'escala', 'opcion_multiple']
+
+function claveOverrides(encuestaId) {
+  return `metr1ka:overridesEspeciales:${encuestaId}`
+}
+
+// Panel para reasignar a mano qué pregunta de la encuesta corresponde a cada
+// rol especial (candidato, edad, sexo, etc.) cuando el clave_base automático
+// no matchea — la encuesta puede tener la data pero con un wording distinto
+// al esperado, y sin esto el reporte entero queda "No disponible para esta
+// encuesta" aunque la data exista (ver preguntaEspecial en reportesAutomaticos.js).
+function PanelPreguntasEspeciales({ preguntas, overrides, setOverrides }) {
+  const [abierto, setAbierto] = useState(false)
+  const elegibles = useMemo(() => (preguntas || []).filter(p => TIPOS_ELEGIBLES.includes(p.tipo)), [preguntas])
+
+  return (
+    // OJO: sin overflow:hidden acá — recortaba el desplegable del Select cuando
+    // se abría, dejando opciones inseleccionables "detrás" del bloque de reportes.
+    // El redondeo de esquinas se aplica directo en el botón y en el cuerpo.
+    <div style={{ background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--r2)' }}>
+      <button onClick={() => setAbierto(v => !v)} style={{
+        width: '100%', padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'DM Sans',
+        borderRadius: abierto ? 'var(--r2) var(--r2) 0 0' : 'var(--r2)',
+      }}>
+        <span style={{ fontSize: 13, fontWeight: 700 }}>⚙ Preguntas especiales</span>
+        <span style={{ fontSize: 12, color: 'var(--ink3)' }}>{abierto ? 'Ocultar ▲' : 'Configurar ▼'}</span>
+      </button>
+      {abierto && (
+        <div style={{ padding: '4px 16px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <p style={{ fontSize: 12, color: 'var(--ink3)', margin: 0 }}>
+            Varios reportes buscan preguntas puntuales (candidato, edad, situación laboral, etc.) por una etiqueta interna.
+            Si un reporte aparece como "No disponible" aunque la encuesta tenga esa data, elegí acá manualmente qué pregunta corresponde a cada rol.
+          </p>
+          {CLAVES_ESPECIALES.map(({ clave, label }) => {
+            const auto = buscarPregunta(preguntas, clave)
+            return (
+              <div key={clave} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ width: 200, fontSize: 12, fontWeight: 600 }}>{label}</div>
+                <Select
+                  value={overrides[clave] || ''}
+                  onChange={e => setOverrides(prev => {
+                    const next = { ...prev }
+                    if (e.target.value) next[clave] = e.target.value
+                    else delete next[clave]
+                    return next
+                  })}
+                  style={{ flex: 1, minWidth: 220, padding: '6px 9px', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 12, fontFamily: 'DM Sans', background: 'var(--surface)' }}
+                >
+                  <option value="">{auto ? `Detección automática (${auto.texto})` : '— No detectada automáticamente —'}</option>
+                  {elegibles.map(p => <option key={p.id} value={p.id}>{p.texto}</option>)}
+                </Select>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ReportesAutomaticos({ encuesta, preguntas, statsZona, onCargarZonas, loadingZonas }) {
   const [crudo, setCrudo]       = useState(null)
   const [cargando, setCargando] = useState(false)
   const [error, setError]       = useState('')
   const [abierto, setAbierto]   = useState(null) // id del reporte mostrado en pantalla
+  const [overrides, setOverrides] = useState({}) // { [claveBase]: preguntaId } — ver preguntaEspecial()
+
+  // Los overrides quedan guardados por encuesta en localStorage: son una
+  // configuración de "cómo leer esta encuesta en particular", no algo que
+  // tenga sentido resetear cada vez que se entra a la pestaña.
+  useEffect(() => {
+    if (!encuesta?.id) return
+    try {
+      const guardado = localStorage.getItem(claveOverrides(encuesta.id))
+      setOverrides(guardado ? JSON.parse(guardado) : {})
+    } catch { setOverrides({}) }
+  }, [encuesta?.id])
+
+  useEffect(() => {
+    if (!encuesta?.id) return
+    try { localStorage.setItem(claveOverrides(encuesta.id), JSON.stringify(overrides)) } catch { /* noop */ }
+  }, [encuesta?.id, overrides])
 
   // Los reportes se calculan sobre statsZona (por zona/encuestador) + crudo
   // (get_respuestas_crudas, con zona/lat/lng — necesario para candidatos,
@@ -300,7 +382,7 @@ export default function ReportesAutomaticos({ encuesta, preguntas, statsZona, on
     setCargando(false)
   }
 
-  const ctx = useMemo(() => ({ preguntas, statsZona, crudo }), [preguntas, statsZona, crudo])
+  const ctx = useMemo(() => ({ preguntas, statsZona, crudo, overrides }), [preguntas, statsZona, crudo, overrides])
 
   const resultados = useMemo(() => {
     if (!crudo) return {}
@@ -336,6 +418,7 @@ export default function ReportesAutomaticos({ encuesta, preguntas, statsZona, on
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <PanelPreguntasEspeciales preguntas={preguntas} overrides={overrides} setOverrides={setOverrides} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
         {REPORTES_DEFS.map(def => {
           const resultado = resultados[def.id]

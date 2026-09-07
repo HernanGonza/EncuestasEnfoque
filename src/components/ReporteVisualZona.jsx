@@ -12,6 +12,7 @@ import {
   buscarSeguimientoOtro,
 } from '../lib/reportesAutomaticos'
 import { generarPDF } from '../lib/generarPDF'
+import { Select } from './ui'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend)
 
@@ -30,7 +31,15 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Le
 // por sesión, ya usada por los reportes automáticos) y get_zonas_con_sesiones
 // (polígonos de zona, ya usada por Reportes.jsx para el mapa de calor).
 
-const PALETA_NOMINAL = ['#0369a1','#7c3aed','#b45309','#be185d','#047857','#dc2626','#d97706','#0891b2']
+// Paleta nominal: un color por familia de matiz (rojo, naranja, dorado,
+// oliva, verde, azul, violeta, magenta, marrón, vino), sin repetir ningún
+// matiz — antes había dos azules (#0369a1 y #0891b2) y dos naranjas/marrones
+// (#b45309 y #d97706) que se confundían entre sí, sobre todo en el PDF
+// exportado (ver que el mapa no tiene leyenda de color propia, así que la
+// única referencia son estos chips). 10 colores para cubrir hasta 10
+// opciones con color propio sin repetir (ver construirMapaColores: recién
+// arriba de 10 opciones se agrupan en "Otros").
+const PALETA_NOMINAL = ['#2563eb','#dc2626','#ea580c','#ca8a04','#65a30d','#15803d','#7c3aed','#db2777','#78350f','#9f1239']
 const GRIS_OTROS      = '#94a3b8'
 const GRIS_ESPECIAL   = '#cbd5e1'
 const GRIS_SIN_DATOS  = '#e2e8f0'
@@ -179,11 +188,25 @@ function tablaCompletaHTML(zonas, datos) {
   )
 }
 
+// Referencias de color para el PDF — en pantalla esto lo muestra <Leyenda>,
+// pero exportarPDF() arma el HTML aparte (no renderiza el componente React),
+// así que sin esto el PDF no explica qué representa cada color del mapa.
+function leyendaHTML(datos) {
+  const chips = datos.ordenLegend.map(op => `
+    <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:100px;background:#f3f4f6;font-size:10px;margin:0 6px 6px 0">
+      <span style="width:8px;height:8px;border-radius:50%;background:${datos.colores[op] || GRIS_OTROS};display:inline-block;flex-shrink:0"></span>
+      ${op} <span style="color:#9ca3af">(${datos.global[op] || 0})</span>
+    </span>`).join('')
+  return `<div style="margin-bottom:12px">${chips}</div>`
+}
+
 function generarHTMLVisual(secciones, encuesta, esCompleto) {
   const fecha = new Date().toLocaleString('es-AR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' })
   const cuerpo = secciones.map(s => `
     <div class="sec">${s.titulo}</div>
-    ${s.img ? `<img src="${s.img}" style="width:100%;max-height:420px;object-fit:contain;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:12px" />` : ''}
+    ${s.img ? `<img src="${s.img}" style="width:100%;max-height:420px;object-fit:contain;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:10px" />` : ''}
+    <div style="font-size:11px;font-weight:700;color:#555;margin-bottom:4px">Referencias</div>
+    ${s.leyendaHTML}
     <div style="font-size:11px;font-weight:700;color:#555;margin-bottom:4px">Resumen por zona</div>
     ${s.resumenHTML}
     <div style="font-size:11px;font-weight:700;color:#555;margin-bottom:4px">Detalle completo por zona</div>
@@ -236,7 +259,14 @@ function MapaChoropleth({ containerRef, zonas, datos, onClickZona }) {
       if (instRef.current) return
       const rect = containerRef.current?.getBoundingClientRect()
       if (!rect || rect.width === 0 || rect.height === 0) return
-      instRef.current = L.map(containerRef.current, { zoomControl: true }).setView([-27.5, -55.8], 12)
+      // `preferCanvas: true` — sin esto Leaflet dibuja los polígonos (capa
+      // geoJSON de zonas) con su renderer SVG por defecto, y html2canvas
+      // (usado en capturarMapa() para el PDF, más abajo) no captura bien
+      // el overlay SVG anidado de Leaflet: en el PDF salen los tiles del
+      // mapa pero los polígonos pintados quedan vacíos/transparentes. Con
+      // canvas, todo el overlay es un único <canvas> que html2canvas sí
+      // copia pixel a pixel.
+      instRef.current = L.map(containerRef.current, { zoomControl: true, preferCanvas: true }).setView([-27.5, -55.8], 12)
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(instRef.current)
       ro.disconnect()
     }
@@ -386,10 +416,10 @@ function GraficosZona({ zonas, datos, tipoGrafico, comparativa, opcionComparativ
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink3)' }}>Opción a comparar</label>
-          <select value={opcionComparativa} onChange={e => setOpcionComparativa(e.target.value)}
-            style={{ padding: '6px 10px', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 13, fontFamily: 'DM Sans' }}>
+          <Select value={opcionComparativa} onChange={e => setOpcionComparativa(e.target.value)}
+            style={{ width: 'auto', minWidth: 180, padding: '6px 10px', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 13, fontFamily: 'DM Sans' }}>
             {datos.ordenLegend.map(op => <option key={op} value={op}>{op}</option>)}
-          </select>
+          </Select>
         </div>
         <div style={{ background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--r2)', padding: 16, height: 380 }}>
           <Bar data={chartData} options={{ ...chartOptionsBase, indexAxis: tipoGrafico === 'barh' ? 'y' : 'x', plugins: { ...chartOptionsBase.plugins, legend: { display: false } } }} />
@@ -523,7 +553,7 @@ export default function ReporteVisualZona({ encuesta, preguntas }) {
         if (p.id !== preguntaId) { setPreguntaId(p.id); await new Promise(r => setTimeout(r, 50)) }
         const img = await capturarMapa()
         const d = calcularDatosPregunta(p, preguntas, crudo)
-        secciones.push({ titulo: p.texto, img, resumenHTML: tablaResumenHTML(zonas, d), completoHTML: tablaCompletaHTML(zonas, d) })
+        secciones.push({ titulo: p.texto, img, leyendaHTML: leyendaHTML(d), resumenHTML: tablaResumenHTML(zonas, d), completoHTML: tablaCompletaHTML(zonas, d) })
       }
       if (preguntaId !== preguntaOriginal) setPreguntaId(preguntaOriginal)
       const html = generarHTMLVisual(secciones, encuesta, modo === 'todas')
@@ -555,10 +585,10 @@ export default function ReporteVisualZona({ encuesta, preguntas }) {
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 'var(--r2)', padding: '12px 16px' }}>
         <div style={{ flex: 1, minWidth: 260 }}>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Pregunta</label>
-          <select value={preguntaId || ''} onChange={e => setPreguntaId(e.target.value)}
-            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 13, fontFamily: 'DM Sans', background: 'var(--surface)' }}>
+          <Select value={preguntaId || ''} onChange={e => setPreguntaId(e.target.value)}
+            style={{ padding: '8px 10px', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 13, fontFamily: 'DM Sans', background: 'var(--surface)' }}>
             {preguntasElegibles.map(p => <option key={p.id} value={p.id}>{p.texto}</option>)}
-          </select>
+          </Select>
         </div>
         <button onClick={() => exportarPDF('actual')} disabled={exportando} style={btnGhost}>{exportando ? 'Generando…' : '↓ PDF (esta pregunta)'}</button>
         <button onClick={() => exportarPDF('todas')} disabled={exportando} style={{ ...btnGhost, background: 'var(--accent)', color: '#fff', border: 'none', fontWeight: 700 }}>{exportando ? 'Generando…' : '↓ PDF (todas las preguntas)'}</button>

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { generarPDF } from '../lib/generarPDF'
 import { buscarPregunta, distribucionCompleta } from '../lib/reportesAutomaticos'
 import { ArrowLeft, Download } from 'lucide-react'
+import { Select } from './ui'
 
 // Comparación entre dos encuestas (Cambio 2) + Panel de seguimiento
 // temporal (Reporte 21, atado al Cambio 2 — no vive en REPORTES_DEFS).
@@ -277,19 +278,19 @@ export default function CompararEncuestas({ encuestas, perfil, onVolver }) {
       <div style={{ ...box, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 220 }}>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', display: 'block', marginBottom: 4 }}>Encuesta A</label>
-          <select value={idA} onChange={e => elegirA(e.target.value)} style={inp}>
+          <Select value={idA} onChange={e => elegirA(e.target.value)} style={inp}>
             <option value="">Elegir encuesta…</option>
             {encuestas.map(enc => <option key={enc.id} value={enc.id} disabled={enc.id === idB}>{enc.nombre}</option>)}
-          </select>
+          </Select>
           {cargandoA && <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 6 }}>Cargando…</div>}
           {ladoA.error && <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 6 }}>{ladoA.error}</div>}
         </div>
         <div style={{ flex: 1, minWidth: 220 }}>
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', display: 'block', marginBottom: 4 }}>Encuesta B</label>
-          <select value={idB} onChange={e => elegirB(e.target.value)} style={inp}>
+          <Select value={idB} onChange={e => elegirB(e.target.value)} style={inp}>
             <option value="">Elegir encuesta…</option>
             {encuestas.map(enc => <option key={enc.id} value={enc.id} disabled={enc.id === idA}>{enc.nombre}</option>)}
-          </select>
+          </Select>
           {cargandoB && <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 6 }}>Cargando…</div>}
           {ladoB.error && <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 6 }}>{ladoB.error}</div>}
         </div>
@@ -305,9 +306,9 @@ export default function CompararEncuestas({ encuestas, perfil, onVolver }) {
         <>
           <div style={{ ...box, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink3)' }}>Pregunta a comparar</label>
-            <select value={claveBaseActiva} onChange={e => setClaveBase(e.target.value)} style={{ ...inp, width: 'auto', flex: 1, minWidth: 240 }}>
+            <Select value={claveBaseActiva} onChange={e => setClaveBase(e.target.value)} style={{ ...inp, width: 'auto', flex: 1, minWidth: 240 }}>
               {preguntasComunes.map(p => <option key={p.clave_base} value={p.clave_base}>{p.texto || p.clave_base}</option>)}
-            </select>
+            </Select>
             <button onClick={descargarPDFPregunta} disabled={!filasComparacion.length}
               style={{ padding: '8px 14px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--r)', fontSize: 12, fontWeight: 700, cursor: filasComparacion.length ? 'pointer' : 'not-allowed', opacity: filasComparacion.length ? 1 : 0.5, fontFamily: 'DM Sans', display: 'flex', alignItems: 'center', gap: 6 }}>
               <Download size={13} /> Descargar PDF

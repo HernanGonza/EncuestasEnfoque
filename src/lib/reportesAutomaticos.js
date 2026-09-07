@@ -48,6 +48,37 @@ export function buscarPregunta(preguntas, claveBase) {
   return (preguntas || []).find(p => p.clave_base === claveBase) || null
 }
 
+// Lista de roles "especiales" que un admin puede reasignar a mano cuando el
+// clave_base automático no matchea (encuesta con wording distinto al
+// esperado). `label`/`grupo` son solo para armar el selector en
+// ReportesAutomaticos.jsx — el resto de esta lib no los usa.
+export const CLAVES_ESPECIALES = [
+  { clave: 'candidato_intendente', label: 'Candidato a intendente' },
+  { clave: 'candidato_gobernador', label: 'Candidato a gobernador' },
+  { clave: 'participa',            label: 'Participación (¿va a votar?)' },
+  { clave: 'edad',                 label: 'Edad' },
+  { clave: 'sexo',                 label: 'Género' },
+  { clave: 'nivel_educativo',      label: 'Nivel educativo' },
+  { clave: 'situacion_laboral',    label: 'Situación laboral' },
+  { clave: 'evaluacion_gestion',   label: 'Evaluación de gestión' },
+  { clave: 'problema_principal',   label: 'Principal problema' },
+  { clave: 'probabilidad_voto',    label: 'Probabilidad de voto' },
+]
+
+// Igual que buscarPregunta, pero antes de la detección automática por
+// clave_base mira si el admin ya asignó manualmente una pregunta a este rol
+// (ctx.overrides = { [claveBase]: preguntaId }, ver ReportesAutomaticos.jsx).
+// Esto es lo que permite "salvar" un reporte cuando la encuesta tiene la
+// pregunta correcta pero el texto/tag nunca matcheó el clave_base esperado.
+export function preguntaEspecial(ctx, claveBase) {
+  const overrideId = ctx?.overrides?.[claveBase]
+  if (overrideId) {
+    const p = (ctx.preguntas || []).find(p => p.id === overrideId)
+    if (p) return p
+  }
+  return buscarPregunta(ctx?.preguntas, claveBase)
+}
+
 export function opcionesDe(pregunta) {
   if (!pregunta) return []
   if (pregunta.tipo === 'si_no') return ['Sí', 'No']
@@ -157,9 +188,9 @@ function reportePorEncuestador(ctx) {
 
 // ── 3. Comparativo de candidatos por zona ──
 function reporteCandidatosPorZona(ctx) {
-  const pCand = buscarPregunta(ctx.preguntas, 'candidato_intendente')
+  const pCand = preguntaEspecial(ctx, 'candidato_intendente')
   if (!pCand) return null
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
   const opciones = opcionesDe(pCand)
   const pSeguimiento = buscarSeguimientoOtro(ctx.preguntas, pCand)
   const porZona = {}
@@ -186,7 +217,7 @@ function reporteCandidatosPorZona(ctx) {
 
 // ── 4. Completo por pregunta y zona ──
 function reporteCompletoPorPreguntaYZona(ctx) {
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
   const preguntas = (ctx.preguntas || []).filter(p =>
     p.clave_base !== 'participa' &&
     ['si_no', 'escala', 'opcion_multiple'].includes(p.tipo)
@@ -272,7 +303,7 @@ function horaArgentina(fechaISO) {
 }
 
 function reporteEvolucionHoraria(ctx) {
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
   const porHora = Array.from({ length: 24 }, () => 0)
   for (const fila of ctx.crudo?.filas || []) {
     if (!fila.fecha || !esCompletada(fila, pParticipa)) continue
@@ -327,14 +358,14 @@ function reporteDistribucionGeografica(ctx) {
 // encuesta (no las 4 juntas en una sola tabla: el cruce completo de las 4
 // a la vez tendría demasiadas columnas para ser legible en un PDF).
 function reporteDemografico(ctx) {
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
   const VARIABLES = [
     ['edad', 'Edad'], ['sexo', 'Género'],
     ['nivel_educativo', 'Nivel educativo'], ['situacion_laboral', 'Situación laboral'],
   ]
   const secciones = []
   for (const [clave, titulo] of VARIABLES) {
-    const p = buscarPregunta(ctx.preguntas, clave)
+    const p = preguntaEspecial(ctx, clave)
     if (!p) continue
     const opciones = opcionesDe(p)
     const porZona = {}
@@ -368,11 +399,11 @@ function reporteDemografico(ctx) {
 
 // ── 10. Intención de voto cruzada con perfil — candidato x edad x género ──
 function reporteVotoPorPerfil(ctx) {
-  const pCand  = buscarPregunta(ctx.preguntas, 'candidato_intendente')
-  const pEdad  = buscarPregunta(ctx.preguntas, 'edad')
-  const pSexo  = buscarPregunta(ctx.preguntas, 'sexo')
+  const pCand  = preguntaEspecial(ctx, 'candidato_intendente')
+  const pEdad  = preguntaEspecial(ctx, 'edad')
+  const pSexo  = preguntaEspecial(ctx, 'sexo')
   if (!pCand || (!pEdad && !pSexo)) return null
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
   const opcionesCand = opcionesDe(pCand)
   const pSeguimiento = buscarSeguimientoOtro(ctx.preguntas, pCand)
   const candidatos = new Set()
@@ -471,14 +502,14 @@ export function distribucionCompleta(pregunta, preguntas, crudo, pParticipa) {
 }
 
 function reporteResumenEjecutivo(ctx) {
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
   const completadas = (ctx.statsZona?.por_zona || []).reduce((s, z) => s + (z.completadas || 0), 0)
   const total = (ctx.statsZona?.por_zona || []).reduce((s, z) => s + (z.total || 0), 0)
 
-  const pIntendente = buscarPregunta(ctx.preguntas, 'candidato_intendente')
-  const pGobernador = buscarPregunta(ctx.preguntas, 'candidato_gobernador')
-  const pGestion    = buscarPregunta(ctx.preguntas, 'evaluacion_gestion')
-  const pProblema   = buscarPregunta(ctx.preguntas, 'problema_principal')
+  const pIntendente = preguntaEspecial(ctx, 'candidato_intendente')
+  const pGobernador = preguntaEspecial(ctx, 'candidato_gobernador')
+  const pGestion    = preguntaEspecial(ctx, 'evaluacion_gestion')
+  const pProblema   = preguntaEspecial(ctx, 'problema_principal')
 
   let evaluacionGestion = null
   if (pGestion) {
@@ -528,9 +559,9 @@ function nivelCompetitividad(diff) {
 }
 
 function reporteCompetitividadZona(ctx) {
-  const pCand = buscarPregunta(ctx.preguntas, 'candidato_intendente')
+  const pCand = preguntaEspecial(ctx, 'candidato_intendente')
   if (!pCand) return null
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
   const opciones = opcionesDe(pCand)
   const pSeguimiento = buscarSeguimientoOtro(ctx.preguntas, pCand)
   const porZona = {}
@@ -577,10 +608,10 @@ function reporteCompetitividadZona(ctx) {
 // ── 13. Agenda temática por zona — candidato ganador + principal problema
 //        de cada zona, agrupados en un resumen por candidato ganador ──
 function reporteAgendaTematica(ctx) {
-  const pCand = buscarPregunta(ctx.preguntas, 'candidato_intendente')
-  const pProblema = buscarPregunta(ctx.preguntas, 'problema_principal')
+  const pCand = preguntaEspecial(ctx, 'candidato_intendente')
+  const pProblema = preguntaEspecial(ctx, 'problema_principal')
   if (!pCand || !pProblema) return null
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
   const opcionesCand = opcionesDe(pCand)
   const opcionesProblema = opcionesDe(pProblema)
   const segCand = buscarSeguimientoOtro(ctx.preguntas, pCand)
@@ -636,10 +667,10 @@ function reporteAgendaTematica(ctx) {
 // ── 14. Corte generacional — candidato x grupo etario, tabla de
 //        contingencia con totales + matriz en % para el gráfico apilado ──
 function reporteCorteGeneracional(ctx) {
-  const pCand = buscarPregunta(ctx.preguntas, 'candidato_intendente')
-  const pEdad = buscarPregunta(ctx.preguntas, 'edad')
+  const pCand = preguntaEspecial(ctx, 'candidato_intendente')
+  const pEdad = preguntaEspecial(ctx, 'edad')
   if (!pCand || !pEdad) return null
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
   const opcionesCand = opcionesDe(pCand)
   const opcionesEdad = opcionesDe(pEdad)
   const segCand = buscarSeguimientoOtro(ctx.preguntas, pCand)
@@ -726,8 +757,8 @@ function reporteIndiceParticipacion(ctx) {
 // oficialista" como el más elegido entre quienes evalúan la gestión
 // positivamente — es la única señal disponible sin agregar metadata nueva.
 function reglaGestionVsVoto(ctx, pParticipa) {
-  const pGestion = buscarPregunta(ctx.preguntas, 'evaluacion_gestion')
-  const pCand = buscarPregunta(ctx.preguntas, 'candidato_intendente')
+  const pGestion = preguntaEspecial(ctx, 'evaluacion_gestion')
+  const pCand = preguntaEspecial(ctx, 'candidato_intendente')
   if (!pGestion || !pCand) return null
   const opcionesCand = opcionesDe(pCand)
   const segCand = buscarSeguimientoOtro(ctx.preguntas, pCand)
@@ -761,8 +792,8 @@ function reglaGestionVsVoto(ctx, pParticipa) {
 // encuentra y la regla se omite sola (mismo criterio del resto del archivo:
 // nunca crashear, mostrar solo lo que aplica a la encuesta actual).
 function reglaProbabilidadVsVoto(ctx, pParticipa) {
-  const pProb = buscarPregunta(ctx.preguntas, 'probabilidad_voto')
-  const pCand = buscarPregunta(ctx.preguntas, 'candidato_intendente')
+  const pProb = preguntaEspecial(ctx, 'probabilidad_voto')
+  const pCand = preguntaEspecial(ctx, 'candidato_intendente')
   if (!pProb || !pCand) return null
   const opcionesCand = opcionesDe(pCand)
   const segCand = buscarSeguimientoOtro(ctx.preguntas, pCand)
@@ -791,7 +822,7 @@ function reglaProbabilidadVsVoto(ctx, pParticipa) {
 // por respuesta === "Otro" como hace `valorFusionadoConSeguimiento` — acá
 // interesa exactamente el caso contrario (NS/NC + texto igual presente).
 function reglaNsNcConTexto(ctx, pParticipa) {
-  const pCand = buscarPregunta(ctx.preguntas, 'candidato_intendente')
+  const pCand = preguntaEspecial(ctx, 'candidato_intendente')
   if (!pCand) return null
   const pSeguimiento = buscarSeguimientoOtro(ctx.preguntas, pCand)
   if (!pSeguimiento) return null
@@ -815,7 +846,7 @@ function reglaNsNcConTexto(ctx, pParticipa) {
 }
 
 function reporteConsistenciaInterna(ctx) {
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
   const reglas = [reglaGestionVsVoto(ctx, pParticipa), reglaProbabilidadVsVoto(ctx, pParticipa), reglaNsNcConTexto(ctx, pParticipa)].filter(Boolean)
   return reglas.length ? { tipo: 'consistencia', reglas } : null
 }
@@ -830,7 +861,7 @@ function franjaHoraria(hora) {
 }
 
 function reporteEvolucionEncuestador(ctx) {
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
   const porEncuestador = {}
   for (const fila of ctx.crudo?.filas || []) {
     if (!fila.fecha || !fila.encuestador || !esCompletada(fila, pParticipa)) continue
@@ -883,7 +914,7 @@ function reporteEvolucionEncuestador(ctx) {
 // disponible en este ctx, misma limitación documentada en el Reporte 15.
 // Por ahora, solo la tabla.
 function reporteMapaTematicoCompleto(ctx) {
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
   const EXCLUIR = ['participa', 'edad', 'sexo', 'nivel_educativo', 'situacion_laboral']
   const preguntas = (ctx.preguntas || []).filter(p =>
     !EXCLUIR.includes(p.clave_base) && ['si_no', 'escala', 'opcion_multiple'].includes(p.tipo)
@@ -966,13 +997,13 @@ function distribucionSobre(filas, pregunta, opciones) {
 }
 
 function reportePerfilVotante(ctx) {
-  const pCand = buscarPregunta(ctx.preguntas, 'candidato_intendente')
+  const pCand = preguntaEspecial(ctx, 'candidato_intendente')
   if (!pCand) return null
-  const pParticipa = buscarPregunta(ctx.preguntas, 'participa')
-  const pEdad = buscarPregunta(ctx.preguntas, 'edad')
-  const pSexo = buscarPregunta(ctx.preguntas, 'sexo')
-  const pEducacion = buscarPregunta(ctx.preguntas, 'nivel_educativo')
-  const pLaboral = buscarPregunta(ctx.preguntas, 'situacion_laboral')
+  const pParticipa = preguntaEspecial(ctx, 'participa')
+  const pEdad = preguntaEspecial(ctx, 'edad')
+  const pSexo = preguntaEspecial(ctx, 'sexo')
+  const pEducacion = preguntaEspecial(ctx, 'nivel_educativo')
+  const pLaboral = preguntaEspecial(ctx, 'situacion_laboral')
   const opcionesCand = opcionesDe(pCand)
   const segCand = buscarSeguimientoOtro(ctx.preguntas, pCand)
   const opcionesEdad = opcionesDe(pEdad), opcionesSexo = opcionesDe(pSexo)
