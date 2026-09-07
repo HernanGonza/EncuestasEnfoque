@@ -22,12 +22,29 @@ export default async function handler(req, res) {
 
   let browser
   try {
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    })
+    const executablePath = await chromium.executablePath()
+
+    // ETXTBSY: si dos invocaciones caen en la misma instancia (Fluid
+    // Compute) y ambas extraen el binario de Chromium a /tmp a la vez, una
+    // intenta ejecutarlo mientras la otra todavía lo está escribiendo.
+    // Reintentamos una vez con una espera corta antes de rendirnos.
+    try {
+      browser = await puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath,
+        headless: chromium.headless,
+      })
+    } catch (launchError) {
+      if (launchError?.code !== 'ETXTBSY') throw launchError
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      browser = await puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath,
+        headless: chromium.headless,
+      })
+    }
 
     const page = await browser.newPage()
     await page.setContent(html, { waitUntil: 'networkidle0' })
@@ -44,9 +61,14 @@ export default async function handler(req, res) {
         </div>`,
     })
 
+    // page.pdf() devuelve un Uint8Array (no un Buffer de Node) desde
+    // puppeteer-core recientes. res.send() de Vercel detecta Buffers para
+    // mandarlos como binario; con un Uint8Array plano no pasa
+    // Buffer.isBuffer() y termina serializado como JSON — un PDF corrupto
+    // que se descarga pero no abre. Por eso el Buffer.from() explícito acá.
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
-    res.send(pdf)
+    res.send(Buffer.from(pdf))
   } catch (e) {
     console.error('api/pdf:', e)
     res.status(500).json({ error: 'Error generando el PDF' })
