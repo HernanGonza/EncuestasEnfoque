@@ -9,6 +9,24 @@ function normalizarSubdominio(v) {
   return v.toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/^-+/, '')
 }
 
+const TEMAS_VISUALES = [
+  { value: 'ciudad',        label: '🏙️ Ciudad',        desc: 'Encuestas sobre la ciudad, espacio público, gestión municipal.' },
+  { value: 'gente',         label: '👥 Gente',          desc: 'Encuestas sobre comunidad, vecinos, participación.' },
+  { value: 'institucional', label: '🏛️ Institucional',  desc: 'Neutro, para cualquier otro tema.' },
+]
+
+// <input type="datetime-local"> usa hora local sin offset (YYYY-MM-DDTHH:mm).
+// La DB guarda timestamptz — estas dos funciones convierten en los dos sentidos.
+function isoALocal(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+function localAIso(local) {
+  return local ? new Date(local).toISOString() : null
+}
+
 // ── Builder de encuestas online — separado de EncuestaBuilder.jsx a pedido.
 // Comparte el editor de preguntas (encuestaBuilderShared) pero tiene su
 // propio flujo: tipo_encuesta fijo en 'online' y asignación de subdominio
@@ -26,6 +44,8 @@ export default function EncuestaBuilderOnline() {
 
   const [meta, setMeta] = useState({
     nombre: '', descripcion: '', pedido_por: '', estado_produccion: 'pendiente', subdominio: '',
+    tema_visual: 'ciudad', titulo_publico: '', subtitulo_publico: '',
+    publicar_desde: '', publicar_hasta: '',
   })
   const [preguntas, setPreguntas] = useState([])
 
@@ -55,11 +75,16 @@ export default function EncuestaBuilderOnline() {
       if (!enc) { setLoading(false); return }
 
       setMeta({
-        nombre:            enc.nombre            || '',
-        descripcion:       enc.descripcion       || '',
-        pedido_por:        enc.pedido_por        || '',
-        estado_produccion: enc.estado_produccion || 'pendiente',
-        subdominio:        enc.subdominio        || '',
+        nombre:             enc.nombre             || '',
+        descripcion:        enc.descripcion        || '',
+        pedido_por:         enc.pedido_por         || '',
+        estado_produccion:  enc.estado_produccion  || 'pendiente',
+        subdominio:         enc.subdominio         || '',
+        tema_visual:        enc.tema_visual        || 'ciudad',
+        titulo_publico:     enc.titulo_publico     || '',
+        subtitulo_publico:  enc.subtitulo_publico  || '',
+        publicar_desde:     isoALocal(enc.publicar_desde),
+        publicar_hasta:     isoALocal(enc.publicar_hasta),
       })
 
       const pqs = (data.preguntas || []).map(p => ({
@@ -95,23 +120,30 @@ export default function EncuestaBuilderOnline() {
   async function handleSave() {
     if (!meta.nombre.trim()) { setError('El nombre es obligatorio'); return }
     if (bloqueado) { setError('Esta encuesta tiene respuestas y no puede editarse'); return }
+    if (meta.publicar_desde && meta.publicar_hasta && meta.publicar_hasta <= meta.publicar_desde) {
+      setError('La fecha de fin tiene que ser posterior a la de inicio')
+      return
+    }
     setSaving(true); setError('')
     try {
       const subdominio = meta.subdominio ? normalizarSubdominio(meta.subdominio) : null
+      const camposComunes = {
+        nombre: meta.nombre, descripcion: meta.descripcion || null,
+        pedido_por: meta.pedido_por || null, estado_produccion: meta.estado_produccion,
+        tipo_encuesta: 'online', subdominio,
+        tema_visual: meta.tema_visual || 'ciudad',
+        titulo_publico: meta.titulo_publico || null,
+        subtitulo_publico: meta.subtitulo_publico || null,
+        publicar_desde: localAIso(meta.publicar_desde),
+        publicar_hasta: localAIso(meta.publicar_hasta),
+      }
       let encuestaId = id
       if (isEditing) {
-        const { error: e } = await supabase.from('encuestas').update({
-          nombre: meta.nombre, descripcion: meta.descripcion || null,
-          pedido_por: meta.pedido_por || null, estado_produccion: meta.estado_produccion,
-          tipo_encuesta: 'online', subdominio,
-        }).eq('id', id)
+        const { error: e } = await supabase.from('encuestas').update(camposComunes).eq('id', id)
         if (e) throw e
       } else {
         const { data, error: e } = await supabase.from('encuestas').insert({
-          nombre: meta.nombre, descripcion: meta.descripcion || null,
-          pedido_por: meta.pedido_por || null, estado_produccion: meta.estado_produccion,
-          organizacion_id: meta.pedido_por || null,
-          tipo_encuesta: 'online', subdominio,
+          ...camposComunes, organizacion_id: meta.pedido_por || null,
         }).select().single()
         if (e) throw e
         encuestaId = data.id
@@ -270,6 +302,29 @@ export default function EncuestaBuilderOnline() {
                   </div>
                 </div>
                 <div>
+                  <label style={labelStyle}>Tema visual</label>
+                  <select value={meta.tema_visual} onChange={e => setMeta(m => ({ ...m, tema_visual: e.target.value }))}
+                    style={inputStyle} disabled={bloqueado || esPublicada}>
+                    {TEMAS_VISUALES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                  <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>
+                    {TEMAS_VISUALES.find(t => t.value === meta.tema_visual)?.desc}
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Título de bienvenida</label>
+                  <input value={meta.titulo_publico} onChange={e => setMeta(m => ({ ...m, titulo_publico: e.target.value }))}
+                    placeholder={meta.nombre || 'Título que ve el respondente'} style={inputStyle} disabled={bloqueado || esPublicada} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Bajada de bienvenida</label>
+                  <textarea value={meta.subtitulo_publico} onChange={e => setMeta(m => ({ ...m, subtitulo_publico: e.target.value }))}
+                    placeholder={meta.descripcion || 'Texto corto debajo del título'} rows={2} style={{ ...inputStyle, resize: 'vertical' }} disabled={bloqueado || esPublicada} />
+                  <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>
+                    Si dejás estos dos vacíos, se usa el nombre y la descripción de la encuesta.
+                  </div>
+                </div>
+                <div>
                   <label style={labelStyle}>Estado de producción</label>
                   <select value={meta.estado_produccion} onChange={e => setMeta(m => ({ ...m, estado_produccion: e.target.value }))}
                     style={inputStyle} disabled={bloqueado}>
@@ -278,6 +333,24 @@ export default function EncuestaBuilderOnline() {
                     <option value="para_revisar">Para revisar</option>
                     <option value="publicada">Publicada</option>
                   </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Programación (opcional)</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--ink3)', marginBottom: 3 }}>Abre</div>
+                      <input type="datetime-local" value={meta.publicar_desde} onChange={e => setMeta(m => ({ ...m, publicar_desde: e.target.value }))}
+                        style={inputStyle} disabled={bloqueado} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--ink3)', marginBottom: 3 }}>Cierra</div>
+                      <input type="datetime-local" value={meta.publicar_hasta} onChange={e => setMeta(m => ({ ...m, publicar_hasta: e.target.value }))}
+                        style={inputStyle} disabled={bloqueado} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>
+                    Fuera de este rango nadie puede responderla, aunque esté "Publicada". Al llegar la fecha de cierre se marca sola como completada y libera el subdominio. Dejalo vacío para que no cierre sola.
+                  </div>
                 </div>
               </div>
             </div>

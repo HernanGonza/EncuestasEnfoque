@@ -37,7 +37,7 @@ export default function EncuestasOnline() {
 
     const { data: encData, error: err1 } = await supabase
       .from('encuestas')
-      .select('id, nombre, descripcion, estado_produccion, creado_en, organizacion_id, subdominio')
+      .select('id, nombre, descripcion, estado_produccion, creado_en, organizacion_id, subdominio, publicar_desde, publicar_hasta')
       .eq('tipo_encuesta', 'online')
       .order('creado_en', { ascending: false })
 
@@ -113,20 +113,29 @@ export default function EncuestasOnline() {
     navigate(`/superadmin/encuestas-online/${enc.id}`)
   }
 
-  async function moveEncuesta(id, nuevoEstado) {
-    const estadoAnterior = encuestas.find(e => e.id === id)?.estado_produccion
+  // Cerrar una encuesta publicada (a mano o porque el cron la venció) libera
+  // el subdominio para que otra encuesta lo pueda reusar — por eso también
+  // pide confirmación, igual que publicar.
+  const [confirmarCerrar, setConfirmarCerrar] = useState(null) // enc
 
-    setEncuestas(prev => prev.map(e => e.id === id ? { ...e, estado_produccion: nuevoEstado } : e))
+  function pedirCerrar(enc) {
+    setConfirmarCerrar(enc)
+  }
+
+  async function moveEncuesta(id, nuevoEstado, extra = {}) {
+    const anterior = encuestas.find(e => e.id === id)
+
+    setEncuestas(prev => prev.map(e => e.id === id ? { ...e, estado_produccion: nuevoEstado, ...extra } : e))
     setDraggingId(null)
 
     const { error } = await supabase
       .from('encuestas')
-      .update({ estado_produccion: nuevoEstado })
+      .update({ estado_produccion: nuevoEstado, ...extra })
       .eq('id', id)
 
     if (error) {
       console.error('Error al actualizar estado:', error)
-      setEncuestas(prev => prev.map(e => e.id === id ? { ...e, estado_produccion: estadoAnterior } : e))
+      setEncuestas(prev => prev.map(e => e.id === id ? anterior : e))
     }
   }
 
@@ -140,6 +149,7 @@ export default function EncuestasOnline() {
     setDragOver(null)
     if (!enc || enc.estado_produccion === key) return
     if (key === 'publicada') pedirPublicar(enc)
+    else if (key === 'completada') pedirCerrar(enc)
     else moveEncuesta(enc.id, key)
   }
 
@@ -236,6 +246,7 @@ export default function EncuestasOnline() {
                       onDragEnd={onDragEnd}
                       onMove={(id, nuevoEstado) => {
                         if (nuevoEstado === 'publicada') pedirPublicar(enc)
+                        else if (nuevoEstado === 'completada') pedirCerrar(enc)
                         else moveEncuesta(id, nuevoEstado)
                       }}
                       onClick={() => navigate(`/superadmin/encuestas-online/${enc.id}`)}
@@ -283,6 +294,22 @@ export default function EncuestasOnline() {
           danger={false}
           onConfirm={() => { moveEncuesta(confirmarPublicar.id, 'publicada'); setConfirmarPublicar(null) }}
           onCancel={() => setConfirmarPublicar(null)}
+        />
+      )}
+
+      {confirmarCerrar && (
+        <ConfirmDialog
+          icon="🔒"
+          title="Cerrar encuesta online"
+          message={
+            confirmarCerrar.subdominio
+              ? `Se deja de poder responder en https://${confirmarCerrar.subdominio}.metr1ka.com y ese subdominio queda libre para usarlo en otra encuesta. Las respuestas ya recibidas se conservan. ¿Confirmás?`
+              : 'Se deja de poder responder esta encuesta. Las respuestas ya recibidas se conservan. ¿Confirmás?'
+          }
+          confirmLabel="Cerrar encuesta"
+          cancelLabel="Cancelar"
+          onConfirm={() => { moveEncuesta(confirmarCerrar.id, 'completada', { subdominio: null }); setConfirmarCerrar(null) }}
+          onCancel={() => setConfirmarCerrar(null)}
         />
       )}
     </div>
@@ -333,6 +360,13 @@ function KanbanCard({ enc, isDragging, onDragStart, onDragEnd, onMove, onClick }
           <span style={{ fontSize: 11, color: 'var(--ink3)', fontStyle: 'italic' }}>Sin subdominio asignado</span>
         )}
       </div>
+      {(enc.publicar_desde || enc.publicar_hasta) && (
+        <div style={{ fontSize: 10, color: 'var(--ink3)', marginBottom: 6 }}>
+          ⏱ {enc.publicar_desde ? new Date(enc.publicar_desde).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'sin inicio'}
+          {' → '}
+          {enc.publicar_hasta ? new Date(enc.publicar_hasta).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'sin cierre'}
+        </div>
+      )}
       {enc.descripcion && (
         <div style={{ fontSize: 11, color: 'var(--ink2)', marginBottom: 8, lineHeight: 1.4 }}>
           {enc.descripcion.length > 70 ? enc.descripcion.substring(0, 70) + '…' : enc.descripcion}
