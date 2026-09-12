@@ -23,6 +23,11 @@ const NAV = [
       { to: '/superadmin/encuestas',      icon: '📋', label: 'Encuestas'      },
     ]
   },
+  { group: 'Online',
+    items: [
+      { to: '/superadmin/encuestas-online', icon: '🌐', label: 'Encuestas online' },
+    ]
+  },
 ]
 
 export default function SuperadminLayout() {

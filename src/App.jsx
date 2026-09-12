@@ -23,6 +23,8 @@ import Usuarios             from './pages/superadmin/Usuarios'
 import Suscripciones        from './pages/superadmin/Suscripciones'
 import Encuestas            from './pages/superadmin/Encuestas'
 import EncuestaBuilder      from './pages/superadmin/EncuestaBuilder'
+import EncuestasOnline       from './pages/superadmin/EncuestasOnline'
+import EncuestaBuilderOnline from './pages/superadmin/EncuestaBuilderOnline'
 
 // Admin
 import DashboardAdmin     from './pages/admin/Dashboard'
@@ -71,6 +73,9 @@ export default function App() {
               <Route path="/superadmin/encuestas"             element={<Encuestas />} />
               <Route path="/superadmin/encuestas/nueva"       element={<EncuestaBuilder />} />
               <Route path="/superadmin/encuestas/:id"         element={<EncuestaBuilder />} />
+              <Route path="/superadmin/encuestas-online"       element={<EncuestasOnline />} />
+              <Route path="/superadmin/encuestas-online/nueva" element={<EncuestaBuilderOnline />} />
+              <Route path="/superadmin/encuestas-online/:id"   element={<EncuestaBuilderOnline />} />
             </Route>
           </Route>
 

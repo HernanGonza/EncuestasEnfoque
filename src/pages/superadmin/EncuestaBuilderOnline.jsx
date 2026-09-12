@@ -5,9 +5,15 @@ import { Spinner } from '../../components/ui'
 import { TIPOS, ESTADO_CONFIG, inputStyle, labelStyle } from './encuestaBuilderConstants'
 import { PreguntaCard } from './encuestaBuilderShared'
 
-// ── Builder principal (domiciliaria / callejera / telefónica) ──
-// Las encuestas online tienen su propio constructor: ver EncuestaBuilderOnline.jsx
-export default function EncuestaBuilder() {
+function normalizarSubdominio(v) {
+  return v.toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/^-+/, '')
+}
+
+// ── Builder de encuestas online — separado de EncuestaBuilder.jsx a pedido.
+// Comparte el editor de preguntas (encuestaBuilderShared) pero tiene su
+// propio flujo: tipo_encuesta fijo en 'online' y asignación de subdominio
+// (campogrande -> campogrande.metr1ka.com), que acá asigna el superadmin.
+export default function EncuestaBuilderOnline() {
   const { id } = useParams()
   const navigate = useNavigate()
   const isEditing = Boolean(id)
@@ -19,7 +25,7 @@ export default function EncuestaBuilder() {
   const [bloqueado, setBloqueado]   = useState(false)
 
   const [meta, setMeta] = useState({
-    nombre: '', descripcion: '', pedido_por: '', estado_produccion: 'pendiente', tipo_encuesta: 'domiciliaria',
+    nombre: '', descripcion: '', pedido_por: '', estado_produccion: 'pendiente', subdominio: '',
   })
   const [preguntas, setPreguntas] = useState([])
 
@@ -31,9 +37,6 @@ export default function EncuestaBuilder() {
   async function loadEncuesta() {
     setLoading(true)
     try {
-      // get_encuesta_full: trae encuesta + preguntas + opciones en una sola query optimizada
-      // p_org_id null → la función es SECURITY DEFINER, el superadmin no tiene org_id propio,
-      // por eso pasamos el organizacion_id de la encuesta consultándolo primero.
       const { data: encMeta } = await supabase
         .from('encuestas')
         .select('organizacion_id, pedido_por')
@@ -52,14 +55,13 @@ export default function EncuestaBuilder() {
       if (!enc) { setLoading(false); return }
 
       setMeta({
-        nombre:             enc.nombre             || '',
-        descripcion:        enc.descripcion        || '',
-        pedido_por:         enc.pedido_por         || '',
-        tipo_encuesta:      enc.tipo_encuesta       || 'domiciliaria',
-        estado_produccion:  enc.estado_produccion  || 'pendiente',
+        nombre:            enc.nombre            || '',
+        descripcion:       enc.descripcion       || '',
+        pedido_por:        enc.pedido_por        || '',
+        estado_produccion: enc.estado_produccion || 'pendiente',
+        subdominio:        enc.subdominio        || '',
       })
 
-      // Las opciones ya vienen dentro de cada pregunta como opciones_pregunta
       const pqs = (data.preguntas || []).map(p => ({
         ...p,
         opciones: (p.opciones_pregunta || []),
@@ -68,7 +70,6 @@ export default function EncuestaBuilder() {
       }))
       setPreguntas(pqs)
 
-      // Verificar bloqueo: hay sesiones respondidas
       if (data.resumen?.total_sesiones > 0) {
         setBloqueado(true)
       }
@@ -96,12 +97,13 @@ export default function EncuestaBuilder() {
     if (bloqueado) { setError('Esta encuesta tiene respuestas y no puede editarse'); return }
     setSaving(true); setError('')
     try {
+      const subdominio = meta.subdominio ? normalizarSubdominio(meta.subdominio) : null
       let encuestaId = id
       if (isEditing) {
         const { error: e } = await supabase.from('encuestas').update({
           nombre: meta.nombre, descripcion: meta.descripcion || null,
           pedido_por: meta.pedido_por || null, estado_produccion: meta.estado_produccion,
-          tipo_encuesta: meta.tipo_encuesta || 'domiciliaria',
+          tipo_encuesta: 'online', subdominio,
         }).eq('id', id)
         if (e) throw e
       } else {
@@ -109,7 +111,7 @@ export default function EncuestaBuilder() {
           nombre: meta.nombre, descripcion: meta.descripcion || null,
           pedido_por: meta.pedido_por || null, estado_produccion: meta.estado_produccion,
           organizacion_id: meta.pedido_por || null,
-          tipo_encuesta: meta.tipo_encuesta || 'domiciliaria',
+          tipo_encuesta: 'online', subdominio,
         }).select().single()
         if (e) throw e
         encuestaId = data.id
@@ -117,7 +119,6 @@ export default function EncuestaBuilder() {
 
       if (isEditing) await supabase.from('preguntas').delete().eq('encuesta_id', encuestaId)
 
-      // Guardar preguntas — primero sin condicionales para obtener IDs reales
       const preguntasGuardadas = []
       for (let i = 0; i < preguntas.length; i++) {
         const p = preguntas[i]
@@ -125,7 +126,7 @@ export default function EncuestaBuilder() {
           encuesta_id: encuestaId, texto: p.texto, tipo: p.tipo,
           requerida: p.requerida, orden: i + 1,
           es_base: p.es_base || false, clave_base: p.clave_base || null,
-          condicionales: null, // se actualiza en segundo paso
+          condicionales: null,
           config_matriz: p.tipo === 'matriz' ? {
             filas:    (p.filas    || []).filter(f => f.texto?.trim()).map(f => ({ texto: f.texto.trim() })),
             columnas: (p.columnas || []).filter(c => c.texto?.trim()).map(c => ({ texto: c.texto.trim() })),
@@ -142,8 +143,6 @@ export default function EncuestaBuilder() {
         }
       }
 
-      // Segundo paso: guardar condicionales con IDs reales
-      // Mapear _tempId / id viejo → id nuevo
       const idMap = {}
       preguntas.forEach((p, i) => {
         const key = p.id || p._tempId
@@ -154,7 +153,6 @@ export default function EncuestaBuilder() {
         const original = preguntas.find(p => (p.id || p._tempId) === (pg.id || pg._tempId))
         if (!original?.condicionales?.reglas?.length) continue
 
-        // Reemplazar destino_id temporal por ID real
         const reglasActualizadas = original.condicionales.reglas.map(r => ({
           ...r,
           destino_id: idMap[r.destino_id] || r.destino_id,
@@ -164,14 +162,17 @@ export default function EncuestaBuilder() {
         }).eq('id', pg._nuevoId)
       }
 
-      navigate('/superadmin/encuestas')
-    } catch (err) { setError(err.message) }
+      navigate('/superadmin/encuestas-online')
+    } catch (err) {
+      if (err.code === '23505') setError('Ese subdominio ya está en uso por otra encuesta.')
+      else setError(err.message)
+    }
     setSaving(false)
   }
 
   async function handleEnviarRevision() {
     await supabase.from('encuestas').update({ estado_produccion: 'para_revisar' }).eq('id', id)
-    navigate('/superadmin/encuestas')
+    navigate('/superadmin/encuestas-online')
   }
 
   if (loading) return <div className="sa-page"><div style={{ padding: 60 }}><Spinner center size="lg" /></div></div>
@@ -183,8 +184,8 @@ export default function EncuestaBuilder() {
     <div className="sa-page">
       <div className="sa-topbar">
         <div className="sa-topbar-left">
-          <div className="sa-eyebrow">Superadmin / Encuestas</div>
-          <h1 className="sa-title">{isEditing ? 'Editar encuesta' : 'Nueva encuesta'}</h1>
+          <div className="sa-eyebrow">Superadmin / Encuestas online</div>
+          <h1 className="sa-title">{isEditing ? 'Editar encuesta online' : 'Nueva encuesta online'}</h1>
           {isEditing && (
             <span style={{ padding: '3px 10px', borderRadius: 100, fontSize: 11, fontWeight: 700, background: cfg.bg, color: cfg.color }}>
               {cfg.label}
@@ -192,7 +193,7 @@ export default function EncuestaBuilder() {
           )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => navigate('/superadmin/encuestas')}
+          <button onClick={() => navigate('/superadmin/encuestas-online')}
             style={{ padding: '9px 18px', border: '1.5px solid var(--border2)', borderRadius: 'var(--r)', background: 'none', cursor: 'pointer', fontSize: 13, fontFamily: 'DM Sans' }}>
             Cancelar
           </button>
@@ -248,15 +249,24 @@ export default function EncuestaBuilder() {
                   </select>
                 </div>
                 <div>
-                  <label style={labelStyle}>Tipo de encuesta</label>
-                  <select value={meta.tipo_encuesta || 'domiciliaria'} onChange={e => setMeta(m => ({ ...m, tipo_encuesta: e.target.value }))}
-                    style={inputStyle} disabled={bloqueado || esPublicada}>
-                    <option value="domiciliaria">Domiciliaria</option>
-                    <option value="callejera">Callejera</option>
-                    <option value="telefonica">Telefónica</option>
-                  </select>
+                  <label style={labelStyle}>Subdominio</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      value={meta.subdominio}
+                      onChange={e => setMeta(m => ({ ...m, subdominio: normalizarSubdominio(e.target.value) }))}
+                      placeholder="campogrande"
+                      style={{ ...inputStyle, fontFamily: 'DM Mono, monospace' }}
+                      disabled={bloqueado || esPublicada}
+                    />
+                    <span style={{ fontSize: 12, color: 'var(--ink3)', whiteSpace: 'nowrap' }}>.metr1ka.com</span>
+                  </div>
+                  {meta.subdominio && (
+                    <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 4, fontFamily: 'DM Mono, monospace' }}>
+                      https://{meta.subdominio}.metr1ka.com
+                    </div>
+                  )}
                   <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>
-                    Para encuestas online, usá el constructor de "Encuestas online" en el sidebar.
+                    Solo minúsculas, números y guiones. Tiene que ser único en toda la plataforma.
                   </div>
                 </div>
                 <div>
@@ -298,7 +308,7 @@ export default function EncuestaBuilder() {
             )}
             {preguntas.length === 0 && (
               <div style={{ textAlign: 'center', padding: '48px 24px', background: 'var(--paper)', border: '2px dashed var(--border2)', borderRadius: 'var(--r2)', color: 'var(--ink3)' }}>
-                <div style={{ fontSize: 28, marginBottom: 10 }}>📋</div>
+                <div style={{ fontSize: 28, marginBottom: 10 }}>🌐</div>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Sin preguntas todavía</div>
                 <div style={{ fontSize: 12 }}>Hacé clic en "Agregar pregunta" para empezar</div>
               </div>
