@@ -15,6 +15,36 @@ const TEMAS_VISUALES = [
   { value: 'institucional', label: '🏛️ Institucional',  desc: 'Neutro, para cualquier otro tema.' },
 ]
 
+// Toda encuesta online tiene que poder cruzarse por estos 4 datos
+// demográficos — se precargan al crear una encuesta nueva (editables/
+// borrables como cualquier otra pregunta, esto es solo para no tener que
+// acordarse de armarlas a mano cada vez). A propósito NO se precarga un
+// "¿Desea participar?" tipo sí/no: en online es redundante — si no quiere
+// participar, directamente no abre el link.
+const PREGUNTAS_BASE_ONLINE = [
+  { texto: '¿Cuál es tu rango de edad?', clave_base: 'edad',
+    opciones: ['18 a 25 años', '26 a 35 años', '36 a 45 años', '46 a 60 años', 'Más de 60 años'] },
+  { texto: '¿Con qué género te identificás?', clave_base: 'sexo',
+    opciones: ['Femenino', 'Masculino', 'Otro', 'Prefiero no decir'] },
+  { texto: '¿Cuál es tu nivel educativo más alto alcanzado?', clave_base: 'nivel_educativo',
+    opciones: ['Primario', 'Secundario', 'Terciario / Universitario', 'Posgrado'] },
+  { texto: '¿Cuál es tu situación laboral actual?', clave_base: 'situacion_laboral',
+    opciones: ['Empleado/a', 'Desempleado/a', 'Estudiante', 'Jubilado/a', 'Ama de casa'] },
+]
+
+function preguntasBaseIniciales() {
+  return PREGUNTAS_BASE_ONLINE.map((p, i) => ({
+    _tempId: Date.now() + i,
+    texto: p.texto,
+    tipo: 'opcion_multiple',
+    requerida: true,
+    orden: i + 1,
+    clave_base: p.clave_base,
+    condicionales: null,
+    opciones: p.opciones.map((texto, j) => ({ texto, orden: j + 1 })),
+  }))
+}
+
 // <input type="datetime-local"> usa hora local sin offset (YYYY-MM-DDTHH:mm).
 // La DB guarda timestamptz — estas dos funciones convierten en los dos sentidos.
 function isoALocal(iso) {
@@ -47,7 +77,7 @@ export default function EncuestaBuilderOnline() {
     tema_visual: 'ciudad', titulo_publico: '', subtitulo_publico: '',
     publicar_desde: '', publicar_hasta: '',
   })
-  const [preguntas, setPreguntas] = useState([])
+  const [preguntas, setPreguntas] = useState(() => isEditing ? [] : preguntasBaseIniciales())
 
   useEffect(() => {
     supabase.from('organizaciones').select('id, nombre').order('nombre').then(({ data }) => setOrgs(data || []))
